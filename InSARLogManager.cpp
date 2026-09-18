@@ -104,11 +104,12 @@ void qtMessageHandler(QtMsgType type, const QMessageLogContext& context, const Q
 
     QString location;
     if (context.file && context.line > 0) {
-        location = QStringLiteral("%1:%2").arg(QString::fromLocal8Bit(context.file)).arg(context.line);
-    }
-    if (context.function) {
-        location += location.isEmpty() ? QString::fromLocal8Bit(context.function)
-                                       : QStringLiteral(" (%1)").arg(QString::fromLocal8Bit(context.function));
+        const QString fullPath = QString::fromLocal8Bit(context.file);
+        const int slashIdx = qMax(fullPath.lastIndexOf('/'), fullPath.lastIndexOf('\\'));
+        const QString fileName = (slashIdx >= 0) ? fullPath.mid(slashIdx + 1) : fullPath;
+        location = QStringLiteral("%1:%2").arg(fileName).arg(context.line);
+    } else if (context.function) {
+        location = QString::fromLocal8Bit(context.function);
     }
 
     QString source = QStringLiteral("Qt");

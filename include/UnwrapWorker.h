@@ -10,6 +10,15 @@ struct SnaphuUiOptions
     quint32 colOverlap = 0;
     quint64 wallTimeoutMilliseconds = 0;
     bool keepArtifactsOnSuccess = false;
+    // SNAPHU 统计代价模式，取值与 Unwrap.h 的 SnaphuStatisticalCostMode 对应：
+    // 0=TOPO（SNAPHU 默认，本工程既有行为），1=DEFO，2=SMOOTH
+    quint32 statisticalCostMode = 0;
+    // 分片驱动：>1 时用 DOTILEMASK 起多个 snaphu 进程并行解缠互不相交的分块子集（每个
+    // 进程 NOASSEMBLE），全部结束后再统一 --assemble 一次。上限受分块数与本层 32 约束。
+    quint32 tileWorkerCount = 1;
+    // 装配重放（恢复）：跳过解缠，只对已保留的 tile 现场跑一次装配。对应 DLL 的
+    // SNAPHU_RUN_OPTION_ASSEMBLE_ONLY。需同时勾选"成功后保留现场"才有 tile 可复用。
+    bool assembleOnly = false;
 };
 Q_DECLARE_METATYPE(SnaphuUiOptions)
 

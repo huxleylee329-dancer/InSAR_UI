@@ -23,12 +23,14 @@
 #include <QStandardItemModel>
 #include <QDebug>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QTimer>
 #include <QSignalBlocker>
 #include <QtConcurrent/QtConcurrent>
 #include <Unwrap.h>
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <vector>
 #include "QtNodes/internal/NodeDetailWindow.hpp"
@@ -50,6 +52,9 @@ UnwrapNode::UnwrapNode()
     , m_snaphuColOverlapSpin(nullptr)
     , m_snaphuTimeoutSpin(nullptr)
     , m_snaphuKeepArtifactsCheck(nullptr)
+    , m_snaphuCostModeCombo(nullptr)
+    , m_snaphuTileWorkerSpin(nullptr)
+    , m_snaphuAssembleOnlyCheck(nullptr)
     , m_outputNodeName("")
     , m_method(1) // default: SPD Guided
     , m_coherenceThreshold(0.2)
@@ -164,6 +169,9 @@ QJsonObject UnwrapNode::save() const
     modelJson["snaphuColOverlap"] = static_cast<int>(m_snaphuOptions.colOverlap);
     modelJson["snaphuTimeoutSeconds"] = static_cast<qint64>(m_snaphuOptions.wallTimeoutMilliseconds / 1000);
     modelJson["snaphuKeepArtifactsOnSuccess"] = m_snaphuOptions.keepArtifactsOnSuccess;
+    modelJson["snaphuStatisticalCostMode"] = static_cast<int>(m_snaphuOptions.statisticalCostMode);
+    modelJson["snaphuTileWorkerCount"] = static_cast<int>(m_snaphuOptions.tileWorkerCount);
+    modelJson["snaphuAssembleOnly"] = m_snaphuOptions.assembleOnly;
 
     return modelJson;
 }
@@ -186,6 +194,15 @@ void UnwrapNode::load(QJsonObject const &json)
         m_snaphuOptions.wallTimeoutMilliseconds = static_cast<quint64>(qMax<qint64>(0, json["snaphuTimeoutSeconds"].toVariant().toLongLong())) * 1000;
     }
     if (!json["snaphuKeepArtifactsOnSuccess"].isUndefined()) m_snaphuOptions.keepArtifactsOnSuccess = json["snaphuKeepArtifactsOnSuccess"].toBool();
+    if (!json["snaphuStatisticalCostMode"].isUndefined()) {
+        m_snaphuOptions.statisticalCostMode = static_cast<quint32>(qBound(0, json["snaphuStatisticalCostMode"].toInt(), 2));
+    }
+    if (!json["snaphuTileWorkerCount"].isUndefined()) {
+        m_snaphuOptions.tileWorkerCount = static_cast<quint32>(qBound(1, json["snaphuTileWorkerCount"].toInt(), 32));
+    }
+    if (!json["snaphuAssembleOnly"].isUndefined()) {
+        m_snaphuOptions.assembleOnly = json["snaphuAssembleOnly"].toBool();
+    }
 
     // SOP Rule 15: load parameters BEFORE triggering validateAndRestoreOutput in base load
     ExecutableNodeDelegateModel::load(json);
@@ -274,6 +291,19 @@ void UnwrapNode::createWidget()
     m_snaphuColOverlapSpin = new QSpinBox();
     m_snaphuTimeoutSpin = new QSpinBox();
     m_snaphuKeepArtifactsCheck = new QCheckBox(QStringLiteral("成功后保留 SNAPHU 现场文件"));
+    m_snaphuCostModeCombo = new QComboBox();
+    // 索引与 SnaphuStatisticalCostMode 取值一一对应；DEFO 为 SNAP snaphu 导出的默认模式
+    m_snaphuCostModeCombo->addItem(QStringLiteral("TOPO（默认，地形相位）"));
+    m_snaphuCostModeCombo->addItem(QStringLiteral("DEFO（SNAP 默认）"));
+    m_snaphuCostModeCombo->addItem(QStringLiteral("SMOOTH"));
+    m_snaphuTileWorkerSpin = new QSpinBox();
+    m_snaphuAssembleOnlyCheck = new QCheckBox(QStringLiteral("仅装配重放（不重跑解缠）"));
+    m_snaphuTileWorkerSpin->setToolTip(QStringLiteral(
+        "DOTILEMASK 分片驱动：>1 时由 DLL 起多个 snaphu 进程并行解缠互不相交的分块子集，"
+        "全部结束后再统一装配一次。上限受分块数与本层 32 约束；1 = 既有单进程行为。"));
+    m_snaphuAssembleOnlyCheck->setToolTip(QStringLiteral(
+        "跳过全部解缠，只对上一次留下的 tile 现场跑一次装配（实测 16 小时的分块阶段约 4 分钟重放）。"
+        "前提：上次运行勾选过“成功后保留 SNAPHU 现场文件”，且复用的 tile 必须与本轮输入一致。"));
     m_snaphuStatusLabel = new QLabel(QStringLiteral("状态: 未运行"));
     m_snaphuStatusLabel->setWordWrap(true);
     m_snaphuTileRowsSpin->setRange(1, 256);
@@ -283,11 +313,17 @@ void UnwrapNode::createWidget()
     m_snaphuTimeoutSpin->setRange(0, 30 * 24 * 60 * 60);
     m_snaphuTimeoutSpin->setSpecialValueText(QStringLiteral("不超时"));
     m_snaphuTimeoutSpin->setSuffix(QStringLiteral(" 秒"));
+    m_snaphuTileWorkerSpin->setRange(1, 32);
+    m_snaphuTileWorkerSpin->setSpecialValueText(QStringLiteral("1（单进程）"));
+    m_snaphuTileWorkerSpin->setSuffix(QStringLiteral(" 个进程"));
     snaphuForm->addRow(QStringLiteral("分块行数"), m_snaphuTileRowsSpin);
     snaphuForm->addRow(QStringLiteral("分块列数"), m_snaphuTileColsSpin);
     snaphuForm->addRow(QStringLiteral("行重叠像素"), m_snaphuRowOverlapSpin);
     snaphuForm->addRow(QStringLiteral("列重叠像素"), m_snaphuColOverlapSpin);
     snaphuForm->addRow(QStringLiteral("最长运行时间"), m_snaphuTimeoutSpin);
+    snaphuForm->addRow(QStringLiteral("统计代价模式"), m_snaphuCostModeCombo);
+    snaphuForm->addRow(QStringLiteral("分片并行进程数"), m_snaphuTileWorkerSpin);
+    snaphuForm->addRow(m_snaphuAssembleOnlyCheck);
     snaphuForm->addRow(m_snaphuKeepArtifactsCheck);
     snaphuForm->addRow(m_snaphuStatusLabel);
 
@@ -302,6 +338,9 @@ void UnwrapNode::createWidget()
         m_snaphuOptions.colOverlap = static_cast<quint32>(m_snaphuColOverlapSpin->value());
         m_snaphuOptions.wallTimeoutMilliseconds = static_cast<quint64>(m_snaphuTimeoutSpin->value()) * 1000;
         m_snaphuOptions.keepArtifactsOnSuccess = m_snaphuKeepArtifactsCheck->isChecked();
+        m_snaphuOptions.statisticalCostMode = static_cast<quint32>(m_snaphuCostModeCombo->currentIndex());
+        m_snaphuOptions.tileWorkerCount = static_cast<quint32>(m_snaphuTileWorkerSpin->value());
+        m_snaphuOptions.assembleOnly = m_snaphuAssembleOnlyCheck->isChecked();
         updateSnaphuOptionWidgets();
         invalidateNodeData();
     };
@@ -311,6 +350,9 @@ void UnwrapNode::createWidget()
     connect(m_snaphuColOverlapSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, applySnaphuChange);
     connect(m_snaphuTimeoutSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, applySnaphuChange);
     connect(m_snaphuKeepArtifactsCheck, &QCheckBox::toggled, this, applySnaphuChange);
+    connect(m_snaphuCostModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, applySnaphuChange);
+    connect(m_snaphuTileWorkerSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, applySnaphuChange);
+    connect(m_snaphuAssembleOnlyCheck, &QCheckBox::toggled, this, applySnaphuChange);
     updateSnaphuOptionWidgets();
 
     // 5. 目标节点
@@ -354,8 +396,10 @@ void UnwrapNode::updateSnaphuOptionWidgets()
 {
     const bool tiled = m_snaphuOptions.tileRows > 1 || m_snaphuOptions.tileCols > 1;
     if (tiled) {
-        m_snaphuOptions.rowOverlap = qMax<quint32>(400, m_snaphuOptions.rowOverlap);
-        m_snaphuOptions.colOverlap = qMax<quint32>(400, m_snaphuOptions.colOverlap);
+        if (m_snaphuOptions.rowOverlap == 0) m_snaphuOptions.rowOverlap = 200;
+        if (m_snaphuOptions.colOverlap == 0) m_snaphuOptions.colOverlap = 200;
+        m_snaphuOptions.rowOverlap = qMax<quint32>(50, m_snaphuOptions.rowOverlap);
+        m_snaphuOptions.colOverlap = qMax<quint32>(50, m_snaphuOptions.colOverlap);
     } else {
         m_snaphuOptions.rowOverlap = 0;
         m_snaphuOptions.colOverlap = 0;
@@ -367,14 +411,25 @@ void UnwrapNode::updateSnaphuOptionWidgets()
     const QSignalBlocker colOverlapBlocker(m_snaphuColOverlapSpin);
     const QSignalBlocker timeoutBlocker(m_snaphuTimeoutSpin);
     const QSignalBlocker artifactsBlocker(m_snaphuKeepArtifactsCheck);
-    m_snaphuRowOverlapSpin->setMinimum(tiled ? 400 : 0);
-    m_snaphuColOverlapSpin->setMinimum(tiled ? 400 : 0);
+    const QSignalBlocker costModeBlocker(m_snaphuCostModeCombo);
+    const QSignalBlocker tileWorkerBlocker(m_snaphuTileWorkerSpin);
+    const QSignalBlocker assembleOnlyBlocker(m_snaphuAssembleOnlyCheck);
+    // 分片进程数与装配重放都只在分块模式下有意义；重放模式下没有 worker，进程数置灰
+    m_snaphuTileWorkerSpin->setEnabled(tiled && !m_snaphuOptions.assembleOnly);
+    m_snaphuAssembleOnlyCheck->setEnabled(tiled);
+    m_snaphuRowOverlapSpin->setEnabled(tiled);
+    m_snaphuColOverlapSpin->setEnabled(tiled);
+    m_snaphuRowOverlapSpin->setMinimum(tiled ? 50 : 0);
+    m_snaphuColOverlapSpin->setMinimum(tiled ? 50 : 0);
     m_snaphuTileRowsSpin->setValue(static_cast<int>(m_snaphuOptions.tileRows));
     m_snaphuTileColsSpin->setValue(static_cast<int>(m_snaphuOptions.tileCols));
     m_snaphuRowOverlapSpin->setValue(static_cast<int>(m_snaphuOptions.rowOverlap));
     m_snaphuColOverlapSpin->setValue(static_cast<int>(m_snaphuOptions.colOverlap));
     m_snaphuTimeoutSpin->setValue(static_cast<int>(m_snaphuOptions.wallTimeoutMilliseconds / 1000));
     m_snaphuKeepArtifactsCheck->setChecked(m_snaphuOptions.keepArtifactsOnSuccess);
+    m_snaphuCostModeCombo->setCurrentIndex(qBound(0, static_cast<int>(m_snaphuOptions.statisticalCostMode), 2));
+    m_snaphuTileWorkerSpin->setValue(qBound(1, static_cast<int>(m_snaphuOptions.tileWorkerCount), 32));
+    m_snaphuAssembleOnlyCheck->setChecked(m_snaphuOptions.assembleOnly);
 }
 
 void UnwrapNode::updateWidgetSize()
@@ -425,7 +480,9 @@ bool UnwrapNode::validateInputs() const
     if (m_method == 3) {
         const bool tiled = m_snaphuOptions.tileRows > 1 || m_snaphuOptions.tileCols > 1;
         if (m_snaphuOptions.tileRows == 0 || m_snaphuOptions.tileCols == 0 ||
-            (tiled && (m_snaphuOptions.rowOverlap < 400 || m_snaphuOptions.colOverlap < 400))) {
+            (tiled && (m_snaphuOptions.rowOverlap < 50 || m_snaphuOptions.colOverlap < 50)) ||
+            (m_snaphuOptions.assembleOnly && !tiled) ||
+            (m_snaphuOptions.tileWorkerCount > 1 && !tiled)) {
             return false;
         }
     }
@@ -457,6 +514,26 @@ bool UnwrapNode::prepareToStart()
     m_preparedMethod = m_method;
     m_preparedThreshold = m_coherenceEdit ? m_coherenceEdit->text().toDouble() : m_coherenceThreshold;
     m_preparedSnaphuOptions = m_snaphuOptions;
+    if (m_preparedMethod == 3 && (m_preparedSnaphuOptions.tileRows > 1 || m_preparedSnaphuOptions.tileCols > 1)) {
+        if (m_preparedSnaphuOptions.rowOverlap < 400 || m_preparedSnaphuOptions.colOverlap < 400) {
+            InSARLogManager::LogDiagnostic(InSARLogManager::LevelWarning, "UnwrapNode", QStringLiteral(
+                "SNAPHU 分块重叠较小 (行重叠=%1, 列重叠=%2 < 建议值 400)，可能影响跨块边界处的相位对齐与连续性。")
+                .arg(m_preparedSnaphuOptions.rowOverlap).arg(m_preparedSnaphuOptions.colOverlap),
+                LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole | LogTarget::DiagnosticFile);
+        }
+        // 装配重放复用上一次留下的 tile，本节点无法自证那批 tile 与本轮输入一致，必须前置提示
+        if (m_preparedSnaphuOptions.assembleOnly) {
+            InSARLogManager::LogDiagnostic(InSARLogManager::LevelWarning, "UnwrapNode", QStringLiteral(
+                "SNAPHU 装配重放已开启：本轮跳过全部解缠，直接复用上一次保留的 tile 现场做装配。"
+                "请确认那批 tile 与本轮的输入、参数一致——复用了陈旧 tile 会静默产出错误结果。"),
+                LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole | LogTarget::DiagnosticFile);
+        }
+        else if (m_preparedSnaphuOptions.tileWorkerCount > 1) {
+            InSARLogManager::LogInfo("UnwrapNode", QStringLiteral(
+                "SNAPHU 分片驱动已开启：将起 %1 个进程并行解缠互不相交的分块子集，随后统一装配。")
+                .arg(m_preparedSnaphuOptions.tileWorkerCount));
+        }
+    }
 
     // Precalculate output file paths for overwrite check
     m_preparedOutputPaths.clear();
@@ -547,6 +624,20 @@ void UnwrapNode::executeProcessing()
     descriptorProvenance.insert(QStringLiteral("producer"), name());
     descriptorProvenance.insert(QStringLiteral("output_port"),
                                 QStringLiteral("unwrap.output.unwrapped_phase"));
+    const QJsonObject inputGeometry = m_inputData
+        ? NodeUtils::inputGeometryFromProductDescriptor(m_inputData->physicalProductDescriptor())
+        : QJsonObject();
+    for (const QString& key : {QStringLiteral("minLon"), QStringLiteral("maxLon"),
+                               QStringLiteral("minLat"), QStringLiteral("maxLat")}) {
+        if (inputGeometry.value(key).isDouble()) {
+            descriptorProvenance.insert(key,
+                QString::number(inputGeometry.value(key).toDouble(), 'g', 17));
+        }
+    }
+    const QString inputCrsWkt = inputGeometry.value(QStringLiteral("crsWkt")).toString().trimmed();
+    if (!inputCrsWkt.isEmpty()) {
+        descriptorProvenance.insert(QStringLiteral("crsWkt"), inputCrsWkt);
+    }
     if (!NodeUtils::setOutputTransactionProductDescriptor(
             m_outputTransaction, ProductDescriptor::create(
                 QStringLiteral("unwrapped_phase"), QStringLiteral("sat-explorer-product"), 1,
@@ -620,8 +711,14 @@ if (event.type == SNAPHU_RUN_EVENT_PREPARED) {
             QStringLiteral("SNAPHU staging: %1; config: %2").arg(event.taskDirectory, event.configPath),
             LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile, QStringLiteral("snaphu.staging"));
     } else if (event.type == SNAPHU_RUN_EVENT_HEARTBEAT) {
+        quint64 logInterval = 60000;
+        if (event.elapsedMilliseconds >= 1800000) {
+            logInterval = 600000; // 运行超过 30 分钟后，每 10 分钟输出一条心跳日志
+        } else if (event.elapsedMilliseconds >= 300000) {
+            logInterval = 300000; // 运行 5~30 分钟时，每 5 分钟输出一条心跳日志
+        }
         const bool shouldLog = m_snaphuLastLogHeartbeatMilliseconds == 0 ||
-            event.elapsedMilliseconds >= m_snaphuLastLogHeartbeatMilliseconds + 60000;
+            event.elapsedMilliseconds >= m_snaphuLastLogHeartbeatMilliseconds + logInterval;
         QStringList metrics;
         metrics.append(QStringLiteral("运行 %1 s").arg(event.elapsedMilliseconds / 1000));
         metrics.append((event.metricAvailability & SNAPHU_RUN_METRIC_CPU_TIME)
@@ -648,6 +745,7 @@ if (event.type == SNAPHU_RUN_EVENT_PREPARED) {
     } else if (event.type == SNAPHU_RUN_EVENT_WARNING || event.type == SNAPHU_RUN_EVENT_LOG) {
         const InSARLogManager::LogLevel level = event.type == SNAPHU_RUN_EVENT_WARNING
             ? InSARLogManager::LevelWarning : InSARLogManager::LevelDebug;
+        // stdout 与 stderr 全部持久化写入 DiagnosticFile 与 DebugConsole，确保分块时间线与进度取证完整
         InSARLogManager::LogDiagnostic(level, "UnwrapNode", QStringLiteral("SNAPHU: %1").arg(event.message),
             LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile, QStringLiteral("snaphu.output"));
     }
@@ -748,6 +846,8 @@ void UnwrapNode::onProcessingFinished()
     }
 
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(
+        m_outputTransaction.productDescriptor));
     setOutputData(0, m_outputData);
 
     if (!h5Paths.isEmpty())
@@ -1122,6 +1222,8 @@ void UnwrapNode::processAutomatically()
     }
     else
     {
+        InSARLogManager::LogWarning("UnwrapNode",
+            QStringLiteral("自动执行准备未就绪，保持空闲：%1").arg(_startFailureMessage));
         setState(ExecutionState::Idle);
     }
 }
@@ -1143,6 +1245,8 @@ struct UnwrapImageDiagnostics
 {
     QString name;
     bool outputFound = false;
+    bool inputPhaseFound = false;
+    bool outputPhaseFound = false;
     bool dimensionsMatch = false;
     int inputRows = 0;
     int inputCols = 0;
@@ -1179,6 +1283,7 @@ struct UnwrapImageDiagnostics
 struct UnwrapValidationResults
 {
     bool success = false;
+    bool fullDiagnostics = false;
     QString errorMessage;
     int expectedMethod = 1;
     double expectedThreshold = 0.2;
@@ -1285,7 +1390,7 @@ private:
     void setupUI()
     {
         setupBaseUI(QObject::tr("正在诊断解缠结果..."),
-                    QObject::tr("正在读取全部输入与输出 H5 数据，检查完整性、重新缠绕一致性和空间风险线索。"),
+                    QObject::tr("正在快速检查输入输出配对、尺寸和记录参数。完整空间诊断需手动启动。"),
                     QObject::tr("解缠诊断汇总"),
                     QObject::tr("解缠参数与结果诊断"), true, true);
 
@@ -1324,6 +1429,46 @@ private:
         addMetric(3, 1, 1, QObject::tr("最大候选跳变区域:"), m_riskRegionLabel);
         addMetric(4, 0, 1, QObject::tr("SNAPHU 幅度约束:"), m_amplitudeLabel);
         addMetric(4, 1, 1, QObject::tr("缺失或尺寸异常结果:"), m_missingLabel);
+
+        auto* fullDiagnosticsLayout = new QHBoxLayout();
+        fullDiagnosticsLayout->setContentsMargins(0, 0, 0, 0);
+        fullDiagnosticsLayout->setSpacing(8);
+        m_fullDiagnosticsButton = new QPushButton(QObject::tr("完整空间诊断"), m_statusCard);
+        m_fullDiagnosticsButton->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
+        m_fullDiagnosticsButton->setToolTip(QObject::tr("扫描全部相位像元，计算重新缠绕一致性、连通域和候选跳变区域。大影像可能耗时较长。"));
+        m_fullDiagnosticsButton->setEnabled(false);
+        m_fullDiagnosticsProgressLabel = new QLabel(m_statusCard);
+        m_fullDiagnosticsProgressLabel->setFixedWidth(180);
+        m_fullDiagnosticsProgressLabel->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
+        m_fullDiagnosticsProgressLabel->setStyleSheet(
+            "font-size: 12px; color: #2563EB; background: transparent; border: none; padding: 0;");
+        m_fullDiagnosticsProgressLabel->hide();
+        fullDiagnosticsLayout->addWidget(m_fullDiagnosticsButton, 0, Qt::AlignLeft);
+        fullDiagnosticsLayout->addWidget(m_fullDiagnosticsProgressLabel, 0, Qt::AlignVCenter);
+        fullDiagnosticsLayout->addStretch(1);
+        static_cast<QVBoxLayout*>(m_statusCard->layout())->addLayout(fullDiagnosticsLayout);
+        connect(m_fullDiagnosticsButton, &QPushButton::clicked, this, [this]() {
+            if (m_fullDiagnosticsRunning) {
+                cancelFullSpatialDiagnostics();
+            } else {
+                startFullSpatialDiagnostics();
+            }
+        });
+
+        m_fullDiagnosticsProgressTimer = new QTimer(this);
+        m_fullDiagnosticsProgressTimer->setInterval(500);
+        connect(m_fullDiagnosticsProgressTimer, &QTimer::timeout, this, [this]() {
+            if (!m_fullDiagnosticsStage || !m_fullDiagnosticsRunning) return;
+            const QStringList stages = {
+                QObject::tr("正在读取完整相位栅格..."),
+                QObject::tr("正在计算重新缠绕一致性..."),
+                QObject::tr("正在分析有效输出连通域..."),
+                QObject::tr("正在扫描候选跳变边..."),
+                QObject::tr("正在汇总候选跳变区域...") };
+            const int stage = std::max(0, std::min(static_cast<int>(stages.size()) - 1,
+                m_fullDiagnosticsStage->load()));
+            m_fullDiagnosticsProgressLabel->setText(stages.at(stage));
+        });
     }
 
     void setLabelsState(const QString& stateText)
@@ -1352,6 +1497,42 @@ private:
 
     void startAsyncValidation() override
     {
+        startValidation(false);
+    }
+
+    void startFullSpatialDiagnostics()
+    {
+        startValidation(true);
+    }
+
+    void cancelFullSpatialDiagnostics()
+    {
+        if (!m_fullDiagnosticsRunning) return;
+        m_isTimedOut = true;
+        if (m_cancelToken) {
+            m_cancelToken->store(true);
+        }
+        m_fullDiagnosticsProgressTimer->stop();
+        m_fullDiagnosticsButton->setText(QObject::tr("正在取消..."));
+        m_fullDiagnosticsButton->setEnabled(false);
+        m_fullDiagnosticsProgressLabel->setText(QObject::tr("正在取消后台诊断..."));
+        m_statusTitle->setText(QObject::tr("完整空间诊断正在取消"));
+        m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #6B7280;");
+        m_statusDesc->setText(QObject::tr("后台任务将在当前扫描区块结束后停止；快速完整性校验结果会保留。"));
+    }
+
+    void restoreFullSpatialDiagnosticsControl()
+    {
+        m_fullDiagnosticsProgressTimer->stop();
+        m_fullDiagnosticsStage.reset();
+        m_fullDiagnosticsRunning = false;
+        m_fullDiagnosticsButton->setText(QObject::tr("完整空间诊断"));
+        m_fullDiagnosticsButton->setEnabled(true);
+        m_fullDiagnosticsProgressLabel->hide();
+    }
+
+    void startValidation(bool fullDiagnostics)
+    {
         const quint64 currentEpoch = ++m_validationEpoch;
         if (m_cancelToken) {
             m_cancelToken->store(true);
@@ -1359,9 +1540,27 @@ private:
         m_cancelToken = std::make_shared<std::atomic_bool>(false);
         auto cancelToken = m_cancelToken;
 
+        m_fullDiagnosticsProgressTimer->stop();
+        m_fullDiagnosticsStage.reset();
+        std::shared_ptr<std::atomic_int> fullDiagnosticsStage;
+        if (fullDiagnostics) {
+            fullDiagnosticsStage = std::make_shared<std::atomic_int>(0);
+            m_fullDiagnosticsStage = fullDiagnosticsStage;
+            m_fullDiagnosticsRunning = true;
+            m_fullDiagnosticsButton->setText(QObject::tr("取消完整空间诊断"));
+            m_fullDiagnosticsProgressLabel->setText(QObject::tr("正在准备完整空间诊断..."));
+            m_fullDiagnosticsProgressLabel->show();
+            m_fullDiagnosticsProgressTimer->start();
+        } else {
+            m_fullDiagnosticsRunning = false;
+            m_fullDiagnosticsButton->setText(QObject::tr("完整空间诊断"));
+            m_fullDiagnosticsProgressLabel->hide();
+        }
+
         m_isTimedOut = false;
         if (m_node->executionState() != ExecutionState::Completed) {
             setNotExecutedState();
+            if (fullDiagnostics) restoreFullSpatialDiagnosticsControl();
             return;
         }
 
@@ -1374,6 +1573,7 @@ private:
             m_compTable->clearComparison();
             m_compTable->setEnabled(false);
             setLabelsState(QObject::tr("诊断失败"));
+            if (fullDiagnostics) restoreFullSpatialDiagnosticsControl();
             return;
         }
 
@@ -1382,12 +1582,20 @@ private:
         const QJsonObject settings = m_node->save();
         const int expectedMethod = settings.value("method").toInt(1);
         const double expectedThreshold = settings.value("coherenceThreshold").toDouble(0.2);
-        m_loadingOverlay->startLoading(QObject::tr("正在计算全部影像的解缠诊断..."));
+        m_fullDiagnosticsButton->setEnabled(false);
+        if (fullDiagnostics) {
+            m_fullDiagnosticsButton->setEnabled(true);
+            m_loadingOverlay->stopLoading();
+        } else {
+            m_loadingOverlay->startLoading(QObject::tr("正在快速检查解缠输出完整性..."), 30000);
+        }
 
-        QFuture<UnwrapValidationResults> future = QtConcurrent::run([inputPaths, outputPaths, expectedMethod, expectedThreshold, cancelToken]() {
+        QFuture<UnwrapValidationResults> future = QtConcurrent::run([inputPaths, outputPaths, expectedMethod, expectedThreshold,
+            fullDiagnostics, fullDiagnosticsStage, cancelToken]() {
             UnwrapValidationResults result;
             result.expectedMethod = expectedMethod;
             result.expectedThreshold = expectedThreshold;
+            result.fullDiagnostics = fullDiagnostics;
 
             QHash<QString, QString> fallbackOutputsByBaseName;
             for (const QString& outputPath : outputPaths) {
@@ -1463,11 +1671,26 @@ private:
                     NodeUtils::readScalarFromH5(outputPath, "unwrap_amplitude_expected_cols", image.amplitudeExpectedCols);
                 }
 
+                image.inputPhaseFound = NodeUtils::probeH5DatasetMetadata(
+                    inputPath, QStringLiteral("phase"), &image.inputRows, &image.inputCols);
+                image.outputPhaseFound = NodeUtils::probeH5DatasetMetadata(
+                    outputPath, QStringLiteral("phase"), &image.outputRows, &image.outputCols);
+                image.dimensionsMatch = image.inputPhaseFound && image.outputPhaseFound &&
+                    image.inputRows == image.outputRows && image.inputCols == image.outputCols;
+
+                if (!fullDiagnostics) {
+                    result.images.append(image);
+                    continue;
+                }
+
+                if (fullDiagnosticsStage) fullDiagnosticsStage->store(0);
                 cv::Mat inputPhase;
                 cv::Mat outputPhase;
-                if (!NodeUtils::readMatFromH5(inputPath, "phase", inputPhase, CV_32F)
-                    || !NodeUtils::readMatFromH5(outputPath, "phase", outputPhase, CV_32F)
-                    || inputPhase.empty() || outputPhase.empty()) {
+                image.inputPhaseFound = NodeUtils::readMatFromH5(inputPath, "phase", inputPhase, CV_32F)
+                    && !inputPhase.empty();
+                image.outputPhaseFound = NodeUtils::readMatFromH5(outputPath, "phase", outputPhase, CV_32F)
+                    && !outputPhase.empty();
+                if (!image.inputPhaseFound || !image.outputPhaseFound) {
                     result.images.append(image);
                     continue;
                 }
@@ -1484,6 +1707,7 @@ private:
                 const qint64 sampleStride = std::max<qint64>(1, (pixelCount + maxResidualSamples - 1) / maxResidualSamples);
                 std::vector<double> residualSamples;
                 residualSamples.reserve(static_cast<size_t>(std::min<qint64>((pixelCount + sampleStride - 1) / sampleStride, maxResidualSamples)));
+                if (fullDiagnosticsStage) fullDiagnosticsStage->store(1);
                 for (int row = 0; row < inputPhase.rows; ++row) {
                     if (row % 128 == 0 && cancelToken && cancelToken->load()) {
                         result.images.clear();
@@ -1544,6 +1768,7 @@ private:
                 }
 
                 if (image.outputFinite > 0) {
+                    if (fullDiagnosticsStage) fullDiagnosticsStage->store(2);
                     cv::Mat labels;
                     cv::Mat stats;
                     cv::Mat centroids;
@@ -1557,6 +1782,7 @@ private:
                     image.largestValidComponentRatio = 100.0 * image.largestValidComponentPixels / image.outputFinite;
                 }
 
+                if (fullDiagnosticsStage) fullDiagnosticsStage->store(3);
                 for (int row = 0; row < outputPhase.rows; ++row) {
                     if (row % 128 == 0 && cancelToken && cancelToken->load()) {
                         result.images.clear();
@@ -1595,6 +1821,7 @@ private:
                 image.candidateJumpPoints = static_cast<qint64>(cv::countNonZero(gradientRiskMask));
 
                 if (image.gradientRiskEdges > 0) {
+                    if (fullDiagnosticsStage) fullDiagnosticsStage->store(4);
                     cv::Mat labels;
                     cv::Mat stats;
                     cv::Mat centroids;
@@ -1625,7 +1852,10 @@ private:
         });
 
         auto* watcher = new QFutureWatcher<UnwrapValidationResults>(this);
-        connect(watcher, &QFutureWatcher<UnwrapValidationResults>::finished, this, [this, watcher, currentEpoch]() {
+        connect(watcher, &QFutureWatcher<UnwrapValidationResults>::finished, this, [this, watcher, currentEpoch, fullDiagnostics]() {
+            if (fullDiagnostics && currentEpoch == m_validationEpoch) {
+                restoreFullSpatialDiagnosticsControl();
+            }
             if (currentEpoch != m_validationEpoch || m_isTimedOut) {
                 watcher->deleteLater();
                 return;
@@ -1640,6 +1870,7 @@ private:
                 m_compTable->clearComparison();
                 m_compTable->setEnabled(false);
                 setLabelsState(QObject::tr("诊断失败"));
+                m_fullDiagnosticsButton->setEnabled(true);
                 watcher->deleteLater();
                 return;
             }
@@ -1685,10 +1916,13 @@ int amplitudeMetadataMissingCount = 0;
                 if (!image.outputFound) {
                     actual = QObject::tr("缺失输出");
                     ++missingOrInvalid;
+                } else if (!image.inputPhaseFound || !image.outputPhaseFound) {
+                    actual = QObject::tr("phase 数据集不可读");
+                    ++missingOrInvalid;
                 } else if (!image.dimensionsMatch) {
                     actual = QObject::tr("尺寸不匹配: %1 x %2").arg(image.outputCols).arg(image.outputRows);
                     ++missingOrInvalid;
-                } else if (!image.hasRewrapMetrics) {
+                } else if (result.fullDiagnostics && !image.hasRewrapMetrics) {
                     actual = QObject::tr("无有效配对像元");
                     ++missingOrInvalid;
                 } else {
@@ -1827,6 +2061,29 @@ if (largestRiskImage) {
                 && (!result.hasRecordedMethod || result.recordedMethod == result.expectedMethod)
                 && (result.expectedMethod != 4 || !result.hasRecordedThreshold || std::abs(result.recordedThreshold - result.expectedThreshold) <= 1e-9);
             const bool amplitudeReview = amplitudeDegradedCount > 0 || amplitudeMetadataMissingCount > 0;
+            if (!result.fullDiagnostics) {
+                const QString pending = QObject::tr("未执行（点击完整空间诊断）");
+                m_coverageLabel->setText(pending);
+                m_rewrapRmseLabel->setText(pending);
+                m_rewrapP95Label->setText(pending);
+                m_componentLabel->setText(pending);
+                m_largestComponentLabel->setText(pending);
+                m_candidateJumpEdgeLabel->setText(pending);
+                m_candidateJumpPointLabel->setText(pending);
+                m_riskRegionLabel->setText(pending);
+                m_fullDiagnosticsButton->setEnabled(missingOrInvalid == 0);
+                if (missingOrInvalid == 0 && metadataMatch && !amplitudeReview) {
+                    m_statusTitle->setText(QObject::tr("快速验证完成"));
+                    m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
+                    m_statusDesc->setText(QObject::tr("输出文件、尺寸和记录参数已完成快速校验。完整空间诊断会扫描全部像元，建议在需要重新缠绕和跳变风险指标时手动启动。"));
+                } else {
+                    m_statusTitle->setText(QObject::tr("快速验证需要复查"));
+                    m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
+                    m_statusDesc->setText(QObject::tr("发现缺失、尺寸异常或记录参数不一致的结果；请先处理这些问题，再执行完整空间诊断。"));
+                }
+                watcher->deleteLater();
+                return;
+            }
             if (missingOrInvalid == 0 && metadataMatch && !amplitudeReview) {
                 m_statusTitle->setText(QObject::tr("诊断完成"));
                 m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
@@ -1838,6 +2095,7 @@ if (largestRiskImage) {
                     ? QObject::tr("发现 SNAPHU 幅度约束降级或元数据缺失；结果仍可用，但质量不等同于使用幅度约束的运行。")
                     : QObject::tr("发现缺失、尺寸异常或记录参数不一致的结果。请先检查对应影像和处理日志。"));
             }
+            m_fullDiagnosticsButton->setEnabled(true);
             watcher->deleteLater();
         });
         watcher->setFuture(future);
@@ -1854,6 +2112,11 @@ if (largestRiskImage) {
     QLabel* m_riskRegionLabel = nullptr;
     QLabel* m_amplitudeLabel = nullptr;
     QLabel* m_missingLabel = nullptr;
+    QPushButton* m_fullDiagnosticsButton = nullptr;
+    QLabel* m_fullDiagnosticsProgressLabel = nullptr;
+    QTimer* m_fullDiagnosticsProgressTimer = nullptr;
+    std::shared_ptr<std::atomic_int> m_fullDiagnosticsStage;
+    bool m_fullDiagnosticsRunning = false;
 };
 
 } // namespace

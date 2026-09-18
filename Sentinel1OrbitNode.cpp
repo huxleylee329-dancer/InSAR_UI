@@ -253,9 +253,11 @@ std::shared_ptr<NodeData> Sentinel1OrbitNode::outData(PortIndex port)
 
 void Sentinel1OrbitNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
-    qDebug() << "[OrbitNode] setInData() port:" << port
-             << "data:" << (data ? "valid" : "null")
-             << "currentState:" << (int)executionState();
+    if (!m_inputData || m_inputData != std::dynamic_pointer_cast<ImportedFileData>(data)) {
+        qDebug() << "[OrbitNode] setInData() port:" << port
+                 << "data:" << (data ? "valid" : "null")
+                 << "currentState:" << (int)executionState();
+    }
     m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
 
     if (m_inputData)
@@ -1102,11 +1104,9 @@ void Sentinel1OrbitNode::onProcessingFinished(
         onError(error);
         return;
     }
-
     OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
     if (!commitLease) {
-        NodeUtils::abandonOutputTransaction(m_outputTransaction,
-                                            QStringLiteral("obsolete execution revision"), projectXml());
+        onError(QStringLiteral("无法获取输出提交租约（执行版本已作废或存在未决失效）。"));
         return;
     }
 

@@ -8,7 +8,9 @@
       "Bash(grep:*)",
       "Bash(git show *)",
       "Skill(code-review)",
-      "Bash(git diff *)"
+      "Bash(git diff *)",
+      "Read(//d/SRC//**)",
+      "Read(//d/SRC/**)"
     ]
   }
 }

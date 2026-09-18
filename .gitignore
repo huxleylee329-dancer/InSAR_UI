@@ -225,6 +225,7 @@ bin/
 tools/
 workboard/
 .opencode/
+diagnostics/
 
 # Claude related
 screenshot/

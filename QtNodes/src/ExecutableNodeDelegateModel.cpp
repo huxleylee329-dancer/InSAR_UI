@@ -8,6 +8,7 @@
 #include <QFileInfo>
 #include <QStringList>
 #include "DataFlowGraphModel.hpp"
+#include "InSARLogManager.h"
 
 #include <memory>
 #include <unordered_map>
@@ -446,13 +447,11 @@ void ExecutableNodeDelegateModel::start()
         if (!_startFailureMessage.isEmpty()) {
             Q_EMIT executionStartRejected(_startFailureMessage);
         }
-        // A manual start with an invalid required binding is a terminal
-        // preparation error; automatic orchestration keeps the node Pending
-        // in its processAutomatically() path.
-        if (_mode == ExecutionMode::Manual) {
-            if (!_startFailureMessage.isEmpty()) setLastErrorMessage(_startFailureMessage);
-            setState(ExecutionState::Error);
-        }
+        // start() is an explicit user action regardless of the configured
+        // execution mode. It must surface a terminal preparation failure;
+        // automatic orchestration uses processAutomatically() instead.
+        if (!_startFailureMessage.isEmpty()) setLastErrorMessage(_startFailureMessage);
+        setState(ExecutionState::Error);
         return;
     }
 
@@ -792,9 +791,8 @@ void ExecutableNodeDelegateModel::completeAutomaticExecution()
 
 void ExecutableNodeDelegateModel::invalidateExecution()
 {
-    // Do not block cancellation or invalidation behind output finalization.
-    std::unique_lock<std::mutex> leaseLock(*projectCommitLeaseMutex(_scene), std::try_to_lock);
-    if (!leaseLock.owns_lock()) {
+    // 避免在输出提交阶段阻塞取消或失效。若本节点正在持有提交租约，则延后失效处理
+    if (_commitLeaseActive.load()) {
         _commitInvalidationRequested.store(true);
         return;
     }
@@ -868,6 +866,11 @@ void ExecutableNodeDelegateModel::setOutputData(PortIndex portIndex, std::shared
             // A node without an explicit, unique output contract cannot publish.
             data.reset();
         } else if (!data->productDescriptor()) {
+            if (!contract.publishedProductTypes.contains(QStringLiteral("preview"))) {
+                InSARLogManager::LogWarning("ExecutableNodeDelegateModel",
+                    QStringLiteral("节点 [%1] 端口 [%2] 发布的 NodeData 未携带产品描述符，已回退为最小合成描述符（可能缺失几何与空间元数据）。")
+                        .arg(name()).arg(portIndex));
+            }
             QMap<QString, QString> provenance;
             provenance.insert(QStringLiteral("producer"), name());
             provenance.insert(QStringLiteral("output_port"), contract.semanticId);

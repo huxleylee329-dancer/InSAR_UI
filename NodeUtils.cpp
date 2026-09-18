@@ -74,8 +74,22 @@ QString normalizedDemLabel(const QString& label)
 }
 
 namespace {
+// 大文件阈值：超过 8MB 的数据文件（雷达图像 H5/TIFF/DAT 等）采用 O(1) 轻量元数据指纹，严禁全盘逐字节读取
+constexpr qint64 kLargeFileHashThreshold = 8 * 1024 * 1024;
+
 QByteArray sha256File(const QString& path)
 {
+    const QFileInfo info(path);
+    if (!info.isFile() || !info.isReadable()) return QByteArray();
+
+    // 针对大文件使用大小与修改时间戳生成 O(1) 快速指纹，避免数十分钟的 IO 灾难与主线程阻塞
+    if (info.size() > kLargeFileHashThreshold) {
+        const QString token = QStringLiteral("fast_fingerprint:%1:%2")
+            .arg(info.size())
+            .arg(info.lastModified().toMSecsSinceEpoch());
+        return QCryptographicHash::hash(token.toUtf8(), QCryptographicHash::Sha256).toHex();
+    }
+
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) return QByteArray();
 
@@ -1286,11 +1300,217 @@ QJsonObject inputGeometryFromProductDescriptor(const QtNodes::ProductDescriptor:
     return geometry;
 }
 
+bool ensureProjectGeoidModelInstalled(const QString& projectRoot, QString* errorMessage)
+{
+    QString root = projectRoot.trimmed();
+    if (root.isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("工程根目录路径为空。");
+        return false;
+    }
+    if (QFileInfo(root).isFile()) {
+        root = QFileInfo(root).path();
+    }
+
+    static QMutex s_installMutex;
+    QMutexLocker locker(&s_installMutex);
+
+    const QDir geoidDir(QDir(root).absoluteFilePath(QStringLiteral(".dem_resources/geoid_models")));
+    const QString targetTif = geoidDir.absoluteFilePath(QStringLiteral("us_nga_egm96_15.tif"));
+    const QString targetRegistry = geoidDir.absoluteFilePath(QStringLiteral("registry.json"));
+    const QString expectedHash = QStringLiteral("db493027562c9b004d7220fa881f5603adada4e1c5029b933fa7de4547b0e78d");
+
+    // 检查目标文件是否已存在且哈希一致
+    bool tifValid = false;
+    if (QFileInfo::exists(targetTif)) {
+        const QString currentHash = QString::fromLatin1(sha256File(targetTif)).toLower();
+        if (currentHash == expectedHash) {
+            tifValid = true;
+        } else {
+            QFile::remove(targetTif);
+        }
+    }
+
+    bool registryValid = false;
+    if (QFileInfo::exists(targetRegistry)) {
+        QFile regFile(targetRegistry);
+        if (regFile.open(QIODevice::ReadOnly)) {
+            const QJsonObject regObj = QJsonDocument::fromJson(regFile.readAll()).object();
+            if (regObj.value(QStringLiteral("verticalDatums")).toObject().contains(QStringLiteral("EGM96"))) {
+                registryValid = true;
+            }
+        }
+        if (!registryValid) {
+            QFile::remove(targetRegistry);
+        }
+    }
+
+    if (tifValid && registryValid) {
+        return true;
+    }
+
+    // 确保目标目录存在
+    if (!geoidDir.exists() && !QDir().mkpath(geoidDir.absolutePath())) {
+        if (errorMessage) *errorMessage = QStringLiteral("无法创建大地水准面模型目录：%1").arg(geoidDir.absolutePath());
+        return false;
+    }
+
+    // 安装/修复 us_nga_egm96_15.tif
+    if (!tifValid) {
+        const QString appDir = QCoreApplication::applicationDirPath();
+        const QStringList tifCandidates = {
+            QStringLiteral(":/SatExplorer/geoid/us_nga_egm96_15.tif"),
+            QDir(appDir).absoluteFilePath(QStringLiteral("../resources/geoid/us_nga_egm96_15.tif")),
+            QDir(appDir).absoluteFilePath(QStringLiteral("resources/geoid/us_nga_egm96_15.tif")),
+            QDir(appDir).absoluteFilePath(QStringLiteral("geoid/us_nga_egm96_15.tif"))
+        };
+
+        QString sourceTif;
+        for (const QString& cand : tifCandidates) {
+            if (QFile::exists(cand)) {
+                sourceTif = cand;
+                break;
+            }
+        }
+
+        if (sourceTif.isEmpty()) {
+            if (errorMessage) *errorMessage = QStringLiteral("未找到内置或本地 EGM96 大地水准面模型文件 (us_nga_egm96_15.tif)。");
+            return false;
+        }
+
+        if (QFile::exists(targetTif)) {
+            QFile::remove(targetTif);
+        }
+
+        if (!QFile::copy(sourceTif, targetTif)) {
+            if (errorMessage) *errorMessage = QStringLiteral("复制 EGM96 大地水准面模型到工程目录失败：%1").arg(targetTif);
+            return false;
+        }
+
+        // 恢复读写权限
+        QFile::setPermissions(targetTif, QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                                         QFileDevice::ReadUser | QFileDevice::WriteUser |
+                                         QFileDevice::ReadGroup | QFileDevice::ReadOther);
+
+        const QString installedHash = QString::fromLatin1(sha256File(targetTif)).toLower();
+        if (installedHash != expectedHash) {
+            QFile::remove(targetTif);
+            if (errorMessage) *errorMessage = QStringLiteral("安装的 EGM96 大地水准面模型哈希校验失败。");
+            return false;
+        }
+    }
+
+    // 安装/修复 registry.json
+    if (!registryValid) {
+        const QString appDir = QCoreApplication::applicationDirPath();
+        const QStringList regCandidates = {
+            QStringLiteral(":/SatExplorer/geoid/registry.json"),
+            QDir(appDir).absoluteFilePath(QStringLiteral("../resources/geoid/registry.json")),
+            QDir(appDir).absoluteFilePath(QStringLiteral("resources/geoid/registry.json")),
+            QDir(appDir).absoluteFilePath(QStringLiteral("geoid/registry.json"))
+        };
+
+        QString sourceReg;
+        for (const QString& cand : regCandidates) {
+            if (QFile::exists(cand)) {
+                sourceReg = cand;
+                break;
+            }
+        }
+
+        bool installedReg = false;
+        if (!sourceReg.isEmpty()) {
+            if (QFile::exists(targetRegistry)) {
+                QFile::remove(targetRegistry);
+            }
+            if (QFile::copy(sourceReg, targetRegistry)) {
+                QFile::setPermissions(targetRegistry, QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                                                     QFileDevice::ReadUser | QFileDevice::WriteUser |
+                                                     QFileDevice::ReadGroup | QFileDevice::ReadOther);
+                installedReg = true;
+            }
+        }
+
+        if (!installedReg) {
+            static const char s_defaultRegistryJson[] =
+                "{\"version\":1,\"verticalDatums\":{\"EGM96\":{\"id\":\"proj-us_nga_egm96_15-20200128\","
+                "\"managedPath\":\".dem_resources/geoid_models/us_nga_egm96_15.tif\","
+                "\"sha256\":\"db493027562c9b004d7220fa881f5603adada4e1c5029b933fa7de4547b0e78d\","
+                "\"source\":\"https://cdn.proj.org/us_nga_egm96_15.tif\","
+                "\"sourceVersion\":\"PROJ CDN object version dYTifQAFpLE.qztPUkWH0BO4idouus8.\"}}}";
+            QSaveFile sf(targetRegistry);
+            if (sf.open(QIODevice::WriteOnly)) {
+                sf.write(s_defaultRegistryJson);
+                if (sf.commit()) {
+                    QFile::setPermissions(targetRegistry, QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                                                         QFileDevice::ReadUser | QFileDevice::WriteUser |
+                                                         QFileDevice::ReadGroup | QFileDevice::ReadOther);
+                    installedReg = true;
+                }
+            }
+        }
+
+        if (!installedReg) {
+            if (errorMessage) *errorMessage = QStringLiteral("无法写入大地水准面注册清单 (registry.json)。");
+            return false;
+        }
+    }
+
+    InSARLogManager::LogInfo("NodeUtils", QStringLiteral("成功安装/校验工程 EGM96 大地水准面模型：%1").arg(targetTif));
+    return true;
+}
+
+bool bindRegisteredGeoidModel(const QString& projectRoot, const QJsonObject& metadata,
+                              AuxiliaryDemBinding& binding, QString* errorMessage)
+{
+    // 自愈兜底：若工程受管大地水准面模型或注册表缺失，自动从内嵌资源部署
+    ensureProjectGeoidModelInstalled(projectRoot, nullptr);
+
+    // Registry metadata is the sole configuration surface for v2 geoid data.
+    // A relative, managed path makes the model reproducible without scanning
+    // project directories or relying on a machine-global installation.
+    QJsonObject geoid = metadata.value(QStringLiteral("geoidModel")).toObject();
+    if (geoid.isEmpty()) {
+        // Backward-compatible resource metadata may predate v2.  The only
+        // permitted fallback is this exact, project-managed registry file;
+        // there is no directory enumeration and no machine-global default.
+        QFile registryFile(QDir(projectRoot).absoluteFilePath(
+            QStringLiteral(".dem_resources/geoid_models/registry.json")));
+        if (registryFile.open(QIODevice::ReadOnly)) {
+            const QJsonObject registry = QJsonDocument::fromJson(registryFile.readAll()).object();
+            geoid = registry.value(QStringLiteral("verticalDatums")).toObject()
+                .value(metadata.value(QStringLiteral("verticalDatum")).toString()).toObject();
+        }
+    }
+    const QString id = geoid.value(QStringLiteral("id")).toString().trimmed();
+    const QString managedPath = QDir::cleanPath(geoid.value(QStringLiteral("managedPath")).toString());
+    const QString expectedHash = geoid.value(QStringLiteral("sha256")).toString().trimmed().toLower();
+    if (id.isEmpty() || managedPath.isEmpty() || QDir::isAbsolutePath(managedPath) ||
+        managedPath == QStringLiteral(".") || managedPath == QStringLiteral("..") ||
+        managedPath.startsWith(QStringLiteral("../")) ||
+        !managedPath.startsWith(QStringLiteral(".dem_resources/geoid_models/")) ||
+        expectedHash.size() != 64) {
+        if (errorMessage) *errorMessage = QStringLiteral(
+            "Auxiliary DEM registry metadata requires geoidModel {id, managedPath, sha256}; no implicit geoid lookup is permitted.");
+        return false;
+    }
+    const QFileInfo geoidFile(QDir(projectRoot).absoluteFilePath(managedPath));
+    if (!geoidFile.isFile() || !geoidFile.isReadable() ||
+        QString::fromLatin1(fileSha256(geoidFile.absoluteFilePath())).compare(expectedHash, Qt::CaseInsensitive) != 0) {
+        if (errorMessage) *errorMessage = QStringLiteral("Registered geoid model is missing or its immutable hash no longer matches.");
+        return false;
+    }
+    binding.geoidModelPath = geoidFile.absoluteFilePath();
+    binding.geoidModelHash = expectedHash;
+    binding.geoidModelId = id;
+    return true;
+}
+
 bool resolveAuxiliaryDemBinding(const QString& projectRoot,
                                 const QtNodes::AuxiliaryDemData& data,
                                 AuxiliaryDemBinding& binding,
                                 QString* errorMessage,
-                                const QJsonObject& inputGeometry)
+                                const QJsonObject& inputGeometry,
+                                bool requireGeoidModel)
 {
     if (!data.isValid()) {
         if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM entity binding is incomplete.");
@@ -1387,8 +1607,9 @@ bool resolveAuxiliaryDemBinding(const QString& projectRoot,
         if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM registry geometry/CRS metadata is invalid.");
         return false;
     }
-    if (!auxiliaryDemCoversInput(metadata, inputGeometry)) {
-        if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM does not cover the trusted input geometry or match its CRS/resolution/vertical datum.");
+    if (!auxiliaryDemCoversInput(metadata, inputGeometry) ||
+        (requireGeoidModel && !bindRegisteredGeoidModel(projectRoot, metadata, binding, errorMessage))) {
+        if (errorMessage && errorMessage->isEmpty()) *errorMessage = QStringLiteral("Auxiliary DEM does not cover the trusted input geometry or match its CRS/resolution/vertical datum.");
         return false;
     }
     bool pinnedKnown = false;
@@ -1448,7 +1669,8 @@ bool resolveAuxiliaryDemBinding(const QString& projectRoot,
                                 const QtNodes::AuxiliaryDemReferenceData& data,
                                 AuxiliaryDemBinding& binding,
                                 QString* errorMessage,
-                                const QJsonObject& inputGeometry)
+                                const QJsonObject& inputGeometry,
+                                bool requireGeoidModel)
 {
     if (!data.isValid() || projectRoot.trimmed().isEmpty()) {
         if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM reference is incomplete.");
@@ -1481,8 +1703,9 @@ bool resolveAuxiliaryDemBinding(const QString& projectRoot,
         if (errorMessage) *errorMessage = QStringLiteral("Referenced DEM registry metadata is incomplete or inconsistent.");
         return false;
     }
-    if (!auxiliaryDemCoversInput(metadata, inputGeometry)) {
-        if (errorMessage) *errorMessage = QStringLiteral("Referenced DEM does not cover the trusted input geometry or match its CRS/resolution/vertical datum.");
+    if (!auxiliaryDemCoversInput(metadata, inputGeometry) ||
+        (requireGeoidModel && !bindRegisteredGeoidModel(projectRoot, metadata, binding, errorMessage))) {
+        if (errorMessage && errorMessage->isEmpty()) *errorMessage = QStringLiteral("Referenced DEM does not cover the trusted input geometry or match its CRS/resolution/vertical datum.");
         return false;
     }
     bool pinnedKnown = false;
@@ -1577,9 +1800,15 @@ bool revalidateAuxiliaryDemBinding(const QString& projectRoot,
                                    AuxiliaryDemBinding& binding,
                                    QString* errorMessage,
                                    const AuxiliaryDemBinding* expectedBinding,
-                                   const QJsonObject& inputGeometry)
+                                   const QJsonObject& inputGeometry,
+                                   bool requireGeoidModel)
 {
     if (!entity && !reference) {
+        // 注意：entity / reference 两个空指针语义是"当前没有任何辅助 DEM 输入变体"，
+        // 而不是"可以无输入地重校验"。本函数必须至少拿到一个活输入对象才能解析绑定，
+        // 因此它不适用于工程加载等输入尚未传播到位的场景；那种场景请改为
+        // 用已提交 provenance 构造 AuxiliaryDemReferenceData 后调用
+        // resolveAuxiliaryDemBinding 的 reference 重载（纯磁盘解析，见 DemNode 的恢复路径）。
         if (errorMessage) *errorMessage = QStringLiteral("No auxiliary DEM binding is active.");
         return false;
     }
@@ -1590,15 +1819,20 @@ bool revalidateAuxiliaryDemBinding(const QString& projectRoot,
         if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM entity/reference bindings changed independently.");
         return false;
     }
-    const bool resolved = entity ? resolveAuxiliaryDemBinding(projectRoot, *entity, binding, errorMessage, inputGeometry)
-                                 : resolveAuxiliaryDemBinding(projectRoot, *reference, binding, errorMessage, inputGeometry);
+    const bool resolved = entity ? resolveAuxiliaryDemBinding(projectRoot, *entity, binding, errorMessage, inputGeometry,
+                                                               requireGeoidModel)
+                                 : resolveAuxiliaryDemBinding(projectRoot, *reference, binding, errorMessage, inputGeometry,
+                                                               requireGeoidModel);
     if (!resolved || !expectedBinding) return resolved;
     if (binding.resourceId != expectedBinding->resourceId ||
         binding.pinnedProvenanceId != expectedBinding->pinnedProvenanceId ||
         binding.rasterHash != expectedBinding->rasterHash ||
          binding.identityH5Hash != expectedBinding->identityH5Hash ||
-         binding.validMaskHash != expectedBinding->validMaskHash ||
-         binding.canonicalMetadataHash != expectedBinding->canonicalMetadataHash) {
+        binding.validMaskHash != expectedBinding->validMaskHash ||
+         binding.canonicalMetadataHash != expectedBinding->canonicalMetadataHash ||
+         binding.geoidModelPath != expectedBinding->geoidModelPath ||
+         binding.geoidModelHash != expectedBinding->geoidModelHash ||
+         binding.geoidModelId != expectedBinding->geoidModelId) {
         notifyResourceChange(binding.resourceId, binding.pinnedProvenanceId, ResourceChangeKind::ExplicitRebind);
         if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM binding changed after preparation.");
         return false;
@@ -1622,8 +1856,9 @@ bool revalidateDemExecutionSnapshot(const QString& projectRoot,
         if (errorMessage) *errorMessage = QStringLiteral("Input geometry changed after DEM preparation.");
         return false;
     }
+    const bool expectGeoid = !snapshot.binding.geoidModelPath.isEmpty();
     return revalidateAuxiliaryDemBinding(projectRoot, entity, reference, binding, errorMessage,
-                                         &snapshot.binding, snapshot.inputGeometry);
+                                         &snapshot.binding, snapshot.inputGeometry, expectGeoid);
 }
 
 bool resolveInsarDemProduct(const QtNodes::InsarDemData& data,
@@ -2695,11 +2930,25 @@ OverwriteResult checkAndPromptOverwrite(IApplicationInterface* iface, const QStr
     return OverwriteResult::NoConflict;
 }
 
+namespace {
+bool recoverDescriptorGeometryMigration(const QDir& root, const QString& nodeName,
+                                        QString* errorMessage);
+}
+
 bool recoverOutputTransaction(const QString& projectRoot, const QString& nodeName, QString* errorMessage)
 {
     QDir root(projectRoot);
     if (!root.exists() || !isDirectProjectChild(root.absolutePath(), nodeName)) {
         if (errorMessage) *errorMessage = QStringLiteral("Invalid output transaction recovery target.");
+        return false;
+    }
+    if (QFileInfo::exists(root.absoluteFilePath(QStringLiteral(".descriptor_geometry_migration.lock")))) {
+        if (errorMessage) *errorMessage = QStringLiteral("A descriptor geometry migration holds the project lease.");
+        return false;
+    }
+    QString migrationRecoveryError;
+    if (!recoverDescriptorGeometryMigration(root, nodeName, &migrationRecoveryError)) {
+        if (errorMessage) *errorMessage = migrationRecoveryError;
         return false;
     }
     const QString journalPath = QDir(transactionDirectoryPath(root.absolutePath()))
@@ -3092,6 +3341,10 @@ bool beginOutputTransaction(const QString& projectRoot,
         if (errorMessage) *errorMessage = QStringLiteral("Project output root does not exist: %1").arg(projectRoot);
         return false;
     }
+    if (QFileInfo::exists(root.absoluteFilePath(QStringLiteral(".descriptor_geometry_migration.lock")))) {
+        if (errorMessage) *errorMessage = QStringLiteral("A descriptor geometry migration holds the project lease.");
+        return false;
+    }
     if (expectedFinalPaths.isEmpty()) {
         if (errorMessage) *errorMessage = QStringLiteral("No expected output files were prepared for node: %1").arg(nodeName);
         return false;
@@ -3104,6 +3357,11 @@ bool beginOutputTransaction(const QString& projectRoot,
                 .arg(root.absolutePath())
                 .arg(nodeName);
         }
+        return false;
+    }
+    QString migrationRecoveryError;
+    if (!recoverDescriptorGeometryMigration(root, nodeName, &migrationRecoveryError)) {
+        if (errorMessage) *errorMessage = migrationRecoveryError;
         return false;
     }
 
@@ -3852,6 +4110,178 @@ void abandonOutputTransaction(OutputTransaction& transaction, const QString& rea
     }
 }
 
+namespace {
+
+const char kDescriptorGeometryMigrationFile[] = ".descriptor_geometry_migration.json";
+const char kDescriptorGeometryMigrationKind[] = "descriptor_geometry_provenance_migration_v1";
+
+bool descriptorGeometryMigrationIsIncomplete(const QDir& root, const QString& nodeName,
+                                             QString* errorMessage)
+{
+    const QString migrationPath = QDir(root.absoluteFilePath(nodeName)).absoluteFilePath(
+        QString::fromLatin1(kDescriptorGeometryMigrationFile));
+    if (!QFileInfo::exists(migrationPath)) return false;
+    QFile migrationFile(migrationPath);
+    if (!migrationFile.open(QIODevice::ReadOnly)) {
+        if (errorMessage) *errorMessage = QStringLiteral("Descriptor geometry migration record cannot be inspected.");
+        return true;
+    }
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(migrationFile.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Descriptor geometry migration record is invalid.");
+        return true;
+    }
+    const QString status = document.object().value(QStringLiteral("status")).toString();
+    if (status == QStringLiteral("completed") || status == QStringLiteral("rolled_back")) return false;
+    if (errorMessage) *errorMessage = QStringLiteral(
+        "Descriptor geometry migration is incomplete; normal recovery must run before the artifact can be inspected.");
+    return true;
+}
+
+bool recoverDescriptorGeometryMigration(const QDir& root, const QString& nodeName,
+                                        QString* errorMessage)
+{
+    const QDir outputDirectory(root.absoluteFilePath(nodeName));
+    const QString migrationPath = outputDirectory.absoluteFilePath(
+        QString::fromLatin1(kDescriptorGeometryMigrationFile));
+    if (!QFileInfo::exists(migrationPath)) return true;
+
+    QFile migrationFile(migrationPath);
+    if (!migrationFile.open(QIODevice::ReadOnly)) {
+        if (errorMessage) *errorMessage = QStringLiteral("Cannot inspect descriptor geometry migration record: %1")
+            .arg(migrationPath);
+        return false;
+    }
+    QJsonParseError parseError;
+    const QJsonDocument migrationDocument = QJsonDocument::fromJson(migrationFile.readAll(), &parseError);
+    migrationFile.close();
+    if (parseError.error != QJsonParseError::NoError || !migrationDocument.isObject()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Descriptor geometry migration record is invalid: %1")
+            .arg(migrationPath);
+        return false;
+    }
+
+    QJsonObject record = migrationDocument.object();
+    const QString status = record.value(QStringLiteral("status")).toString();
+    if (status == QStringLiteral("completed") || status == QStringLiteral("rolled_back")) return true;
+
+    const QString id = record.value(QStringLiteral("id")).toString();
+    const QUuid migrationId(id);
+    const QString normalizedId = migrationId.toString(QUuid::WithoutBraces);
+    const QString targetPath = QDir::cleanPath(record.value(QStringLiteral("targetH5")).toString());
+    const QFileInfo requestedTarget(targetPath);
+    const QString targetName = requestedTarget.fileName();
+    const QString expectedTarget = QDir::cleanPath(outputDirectory.absoluteFilePath(targetName));
+    const QString expectedStaged = QDir::cleanPath(outputDirectory.absoluteFilePath(
+        QStringLiteral(".%1.descriptor-geometry-staging-%2").arg(targetName, normalizedId)));
+    const QString expectedBackup = QDir::cleanPath(outputDirectory.absoluteFilePath(
+        QStringLiteral(".%1.descriptor-geometry-backup-%2").arg(targetName, normalizedId)));
+    const QString expectedManifestBackup = QDir::cleanPath(outputDirectory.absoluteFilePath(
+        QStringLiteral(".%1.descriptor-geometry-backup-%2.json")
+            .arg(QString::fromLatin1(kOutputManifestFile), normalizedId)));
+    const QString expectedJournalBackup = QDir::cleanPath(root.absoluteFilePath(
+        QStringLiteral(".%1.descriptor-geometry-backup-%2.json").arg(nodeName, normalizedId)));
+    const auto matchesExpected = [](const QString& actual, const QString& expected) {
+        return QDir::cleanPath(QFileInfo(actual).absoluteFilePath()) == expected;
+    };
+    if (record.value(QStringLiteral("version")).toInt() != 1 ||
+        record.value(QStringLiteral("kind")).toString() != QString::fromLatin1(kDescriptorGeometryMigrationKind) ||
+        migrationId.isNull() || id != normalizedId || targetName.isEmpty() ||
+        requestedTarget.suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) != 0 ||
+        !matchesExpected(targetPath, expectedTarget) ||
+        !matchesExpected(record.value(QStringLiteral("stagedH5")).toString(), expectedStaged) ||
+        !matchesExpected(record.value(QStringLiteral("backupH5")).toString(), expectedBackup) ||
+        !matchesExpected(record.value(QStringLiteral("manifestBackup")).toString(), expectedManifestBackup) ||
+        !matchesExpected(record.value(QStringLiteral("journalBackup")).toString(), expectedJournalBackup) ||
+        record.value(QStringLiteral("preMigrationSha256")).toString().isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Descriptor geometry migration record has unsafe paths or identity.");
+        return false;
+    }
+
+    const QString backupHash = record.value(QStringLiteral("preMigrationSha256")).toString();
+    const QFileInfo backupInfo(expectedBackup);
+    const QFileInfo targetInfo(expectedTarget);
+    if (backupInfo.isFile()) {
+        if (QString::fromLatin1(sha256File(expectedBackup)) != backupHash) {
+            if (errorMessage) *errorMessage = QStringLiteral("Descriptor geometry migration backup hash is invalid.");
+            return false;
+        }
+        const QString rejectedPath = expectedStaged + QStringLiteral(".recovery-rejected");
+        if (targetInfo.exists() && !QFileInfo::exists(rejectedPath) && !QFile::rename(expectedTarget, rejectedPath)) {
+            if (errorMessage) *errorMessage = QStringLiteral("Cannot isolate partially migrated H5 during descriptor migration recovery.");
+            return false;
+        }
+        if (!QFileInfo::exists(expectedTarget) && !QFile::rename(expectedBackup, expectedTarget)) {
+            if (errorMessage) *errorMessage = QStringLiteral("Cannot restore original H5 during descriptor migration recovery.");
+            return false;
+        }
+    } else {
+        QFile manifestBackupFile(expectedManifestBackup);
+        QFile journalBackupFile(expectedJournalBackup);
+        if (!targetInfo.isFile() || QString::fromLatin1(sha256File(expectedTarget)) != backupHash ||
+            !manifestBackupFile.open(QIODevice::ReadOnly) || !journalBackupFile.open(QIODevice::ReadOnly)) {
+            if (errorMessage) *errorMessage = QStringLiteral("Descriptor geometry migration cannot safely restore its original H5.");
+            return false;
+        }
+        const QJsonObject originalManifest = QJsonDocument::fromJson(manifestBackupFile.readAll()).object();
+        const QJsonObject originalJournal = QJsonDocument::fromJson(journalBackupFile.readAll()).object();
+        manifestBackupFile.close();
+        journalBackupFile.close();
+        QFile currentManifestFile(outputDirectory.absoluteFilePath(QString::fromLatin1(kOutputManifestFile)));
+        QFile currentJournalFile(QDir(transactionDirectoryPath(root.absolutePath())).absoluteFilePath(
+            nodeName + QStringLiteral(".json")));
+        if (!currentManifestFile.open(QIODevice::ReadOnly) || !currentJournalFile.open(QIODevice::ReadOnly) ||
+            QJsonDocument::fromJson(currentManifestFile.readAll()).object() != originalManifest ||
+            QJsonDocument::fromJson(currentJournalFile.readAll()).object() != originalJournal) {
+            if (errorMessage) *errorMessage = QStringLiteral("Descriptor geometry migration has no verified completed rollback state.");
+            return false;
+        }
+    }
+
+    QJsonObject manifestBackup;
+    QJsonObject journalBackup;
+    QFile manifestFile(expectedManifestBackup);
+    QFile journalFile(expectedJournalBackup);
+    if (!manifestFile.open(QIODevice::ReadOnly) || !journalFile.open(QIODevice::ReadOnly)) {
+        if (errorMessage) *errorMessage = QStringLiteral("Descriptor geometry migration backup metadata is unavailable.");
+        return false;
+    }
+    const QJsonDocument manifestDocument = QJsonDocument::fromJson(manifestFile.readAll(), &parseError);
+    const QJsonDocument journalDocument = QJsonDocument::fromJson(journalFile.readAll(), &parseError);
+    manifestFile.close();
+    journalFile.close();
+    if (!manifestDocument.isObject() || !journalDocument.isObject()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Descriptor geometry migration backup metadata is invalid.");
+        return false;
+    }
+    manifestBackup = manifestDocument.object();
+    journalBackup = journalDocument.object();
+    QString writeError;
+    const QString manifestPath = outputDirectory.absoluteFilePath(QString::fromLatin1(kOutputManifestFile));
+    const QString journalPath = QDir(transactionDirectoryPath(root.absolutePath())).absoluteFilePath(nodeName + QStringLiteral(".json"));
+    if (!writeJsonAtomically(manifestPath, manifestBackup, &writeError) ||
+        !writeJsonAtomically(journalPath, journalBackup, &writeError)) {
+        if (errorMessage) *errorMessage = writeError;
+        return false;
+    }
+    if (QFileInfo::exists(expectedStaged) && !QFile::remove(expectedStaged)) {
+        if (errorMessage) *errorMessage = QStringLiteral("Cannot remove staged descriptor migration H5.");
+        return false;
+    }
+    record.insert(QStringLiteral("status"), QStringLiteral("rolled_back"));
+    record.insert(QStringLiteral("recoveredUtc"), QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
+    if (!writeJsonAtomically(migrationPath, record, &writeError)) {
+        if (errorMessage) *errorMessage = writeError;
+        return false;
+    }
+    InSARLogManager::LogWarning("NodeUtils", QString("Recovered interrupted descriptor geometry migration for node: %1")
+        .arg(nodeName));
+    return true;
+}
+
+} // namespace
+
 bool loadCommittedOutputManifest(const QString& projectRoot,
                                  const QString& nodeName,
                                  QStringList& outputPaths,
@@ -3860,6 +4290,15 @@ bool loadCommittedOutputManifest(const QString& projectRoot,
     outputPaths.clear();
     const QDir root(projectRoot);
     if (!root.exists() || !isDirectProjectChild(root.absolutePath(), nodeName)) return false;
+    if (QFileInfo::exists(root.absoluteFilePath(QStringLiteral(".descriptor_geometry_migration.lock")))) {
+        if (errorMessage) *errorMessage = QStringLiteral("A descriptor geometry migration holds the project lease.");
+        return false;
+    }
+    QString migrationRecoveryError;
+    if (!recoverDescriptorGeometryMigration(root, nodeName, &migrationRecoveryError)) {
+        if (errorMessage) *errorMessage = migrationRecoveryError;
+        return false;
+    }
     const QString journalPath = QDir(transactionDirectoryPath(root.absolutePath())).absoluteFilePath(nodeName + QStringLiteral(".json"));
     if (!QFileInfo::exists(journalPath)) {
         if (errorMessage) *errorMessage = QStringLiteral("No committed output transaction record exists.");
@@ -3960,6 +4399,15 @@ bool loadCommittedOutputManifestReadOnly(const QString& projectRoot,
     const QDir root(projectRoot);
     if (!root.exists() || !isDirectProjectChild(root.absolutePath(), nodeName)) {
         if (errorMessage) *errorMessage = QStringLiteral("Committed output target is unavailable.");
+        return false;
+    }
+    if (QFileInfo::exists(root.absoluteFilePath(QStringLiteral(".descriptor_geometry_migration.lock")))) {
+        if (errorMessage) *errorMessage = QStringLiteral("A descriptor geometry migration holds the project lease.");
+        return false;
+    }
+    QString migrationStateError;
+    if (descriptorGeometryMigrationIsIncomplete(root, nodeName, &migrationStateError)) {
+        if (errorMessage) *errorMessage = migrationStateError;
         return false;
     }
 
@@ -5265,19 +5713,35 @@ bool writeStringToH5(const QString& filePath,
         return false;
     }
 
+    const bool isSourcePath = (dataset == QStringLiteral("source_1") || dataset == QStringLiteral("source_2"));
+    if (isSourcePath && !isValidUtf8PathBytes(value)) {
+        if (errMsg) *errMsg = QStringLiteral("Source path is not valid UTF-8 for %1 in %2.")
+                                   .arg(dataset, filePath);
+        return false;
+    }
+
     NodeUtils::Hdf5Locker locker(filePath);
     if (!locker.isLocked()) {
         if (errMsg) *errMsg = QStringLiteral("Failed to lock H5 for string write: %1").arg(filePath);
         return false;
     }
-    FormatConversion conversion;
-    const int rc = conversion.write_str_to_h5(filePath.toStdString().c_str(),
-                                               dataset.toStdString().c_str(),
-                                               value.c_str());
+    const QByteArray fileUtf8 = filePath.toUtf8();
+    const QByteArray datasetUtf8 = dataset.toUtf8();
+    const int rc = Hdf5IO::writeString(fileUtf8.constData(),
+                                       datasetUtf8.constData(),
+                                       value.c_str());
     if (rc != 0) {
         if (errMsg) *errMsg = QStringLiteral("Failed to write H5 string dataset %1 (rc=%2)")
                                    .arg(dataset).arg(rc);
         return false;
+    }
+    if (isSourcePath) {
+        const int encRc = Hdf5IO::writeString(fileUtf8.constData(), "source_path_encoding", "UTF-8");
+        const int verRc = Hdf5IO::writeString(fileUtf8.constData(), "source_path_format_version", "2");
+        if (encRc != 0 || verRc != 0) {
+            if (errMsg) *errMsg = QStringLiteral("Failed to write source-path encoding metadata for %1").arg(filePath);
+            return false;
+        }
     }
     return true;
 }
@@ -5403,21 +5867,23 @@ bool writeSourcePathMetadata(const QString& outputPath,
         if (errMsg) *errMsg = QStringLiteral("Failed to lock output H5 for source-path metadata: %1").arg(outputPath);
         return false;
     }
-    FormatConversion conversion;
-    const std::string outputUtf8 = outputPath.toStdString();
-    const int source1Result = conversion.write_str_to_h5(outputUtf8.c_str(), "source_1", source1.c_str());
+    const QByteArray outputUtf8 = outputPath.toUtf8();
+    const int source1Result = Hdf5IO::writeString(outputUtf8.constData(), "source_1", source1.c_str());
     if (source1Result != 0) {
         if (errMsg) *errMsg = QStringLiteral("Failed to write source_1 metadata (rc=%1): %2")
                                .arg(source1Result).arg(outputPath);
         return false;
     }
-
-    // FormatConversion creates the UTF-8 encoding and format-version datasets
-    // whenever either source path is written.
-    const int source2Result = conversion.write_str_to_h5(outputUtf8.c_str(), "source_2", source2.c_str());
+    const int source2Result = Hdf5IO::writeString(outputUtf8.constData(), "source_2", source2.c_str());
     if (source2Result != 0) {
         if (errMsg) *errMsg = QStringLiteral("Failed to write source_2 metadata (rc=%1): %2")
                                .arg(source2Result).arg(outputPath);
+        return false;
+    }
+    const int encResult = Hdf5IO::writeString(outputUtf8.constData(), "source_path_encoding", "UTF-8");
+    const int verResult = Hdf5IO::writeString(outputUtf8.constData(), "source_path_format_version", "2");
+    if (encResult != 0 || verResult != 0) {
+        if (errMsg) *errMsg = QStringLiteral("Failed to write source-path encoding metadata for %1").arg(outputPath);
         return false;
     }
     return true;
@@ -6324,6 +6790,7 @@ bool copyPhaseProcessingMetadata(const QString& inputPath,
 			QStringLiteral("flat_earth_slave_search_expansion_factor"),
 			QStringLiteral("flat_earth_wavelength_meters"),
 			QStringLiteral("flat_earth_master_azimuth_steering_rate"), QStringLiteral("flat_earth_slave_azimuth_steering_rate"),
+			QStringLiteral("flat_earth_master_azimuth_interval_seconds"), QStringLiteral("flat_earth_slave_azimuth_interval_seconds"),
 			QStringLiteral("flat_earth_master_range_spacing"), QStringLiteral("flat_earth_slave_range_spacing"),
 			QStringLiteral("flat_earth_master_slant_range_first_pixel"), QStringLiteral("flat_earth_slave_slant_range_first_pixel") };
 		QStringList stringDatasets = {
@@ -6370,8 +6837,16 @@ bool copyPhaseProcessingMetadata(const QString& inputPath,
         }
         for (const QString& dataset : doubleDatasets) {
             double value = 0.0;
-            if (!readScalarFromH5(inputPath, dataset, value, errMsg) ||
-                !writeScalarToH5(outputPath, dataset, value, errMsg)) return false;
+            if (!readScalarFromH5(inputPath, dataset, value, errMsg)) {
+                // 兼容未包含方位向采样时间间隔的历史存量数据
+                if (dataset == QStringLiteral("flat_earth_master_azimuth_interval_seconds") ||
+                    dataset == QStringLiteral("flat_earth_slave_azimuth_interval_seconds")) {
+                    if (errMsg) errMsg->clear();
+                    continue;
+                }
+                return false;
+            }
+            if (!writeScalarToH5(outputPath, dataset, value, errMsg)) return false;
         }
         for (const QString& dataset : stringDatasets) {
             std::string value;
@@ -6546,8 +7021,16 @@ bool validateDemPhaseInput(const QString& inputPath, QString* errMsg)
         return false;
     }
 	if (!validateFlatEarthReferenceContract(inputPath, errMsg) ||
-		!validatePhaseValidityContract(inputPath, true, errMsg)) {
+		!validatePhaseValidityContract(inputPath, false, errMsg)) {
 		return false;
+	}
+	if (schemaVersion == kFlatEarthReferenceSchemaVersion) {
+		cv::Mat phaseValidMask;
+		if (!readMatFromH5(inputPath, QStringLiteral("phase_valid_mask"), phaseValidMask, CV_8U, errMsg) ||
+			phaseValidMask.empty() || cv::countNonZero(phaseValidMask) == 0) {
+			if (errMsg) *errMsg = QStringLiteral("DEM 反演要求相位有效掩膜至少包含一个有效像元：%1").arg(inputPath);
+			return false;
+		}
 	}
     if (topoRemoved != 0) {
         if (errMsg) *errMsg = QStringLiteral("DEM 反演要求保留地形相位，当前输入已去地形：%1").arg(inputPath);

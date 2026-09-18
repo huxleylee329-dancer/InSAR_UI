@@ -371,7 +371,7 @@ S1TopsBackGeocodingNode::S1TopsBackGeocodingNode()
         if (!self || self->m_preparedAuxiliaryDemBinding.resourceId != resourceId) return;
         if (kind == NodeUtils::ResourceChangeKind::ProvenanceAdded && provenanceId != self->m_preparedAuxiliaryDemBinding.pinnedProvenanceId) return;
         QTimer::singleShot(0, self.data(), [self]() {
-            if (!self) return;
+            if (!self || self->executionState() == ExecutionState::Running) return;
             self->m_preparedAuxiliaryDemBinding = NodeUtils::AuxiliaryDemBinding();
             self->m_preparedDemExecutionSnapshot = NodeUtils::DemExecutionSnapshot();
             self->m_demPath.clear();
@@ -386,7 +386,7 @@ S1TopsBackGeocodingNode::S1TopsBackGeocodingNode()
         if (self) QTimer::singleShot(0, self.data(), [self]() { if (self) self->refreshAuxiliaryDemLabels(); });
     });
     NodeUtils::registerAuxiliaryDemLabelReboundCallback([self](const QString& label) {
-        if (self && self->m_auxiliaryDemLabel == label) QTimer::singleShot(0, self.data(), [self]() { if (self) { self->m_preparedAuxiliaryDemBinding = NodeUtils::AuxiliaryDemBinding(); self->m_preparedDemExecutionSnapshot = NodeUtils::DemExecutionSnapshot(); self->setProgress(0); self->setState(ExecutionState::Pending); QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels; const auto result = NodeUtils::loadAuxiliaryDemLabels(self->projectPath(), labels); const auto binding = labels.value(self->m_auxiliaryDemLabel); if (result && binding.mode == NodeUtils::AuxiliaryDemLabelMode::WorkflowOutput && !binding.isPlanned()) self->retryAutomaticExecution(); } });
+        if (self && self->m_auxiliaryDemLabel == label) QTimer::singleShot(0, self.data(), [self]() { if (self && self->executionState() != ExecutionState::Running) { self->m_preparedAuxiliaryDemBinding = NodeUtils::AuxiliaryDemBinding(); self->m_preparedDemExecutionSnapshot = NodeUtils::DemExecutionSnapshot(); self->setProgress(0); self->setState(ExecutionState::Pending); QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels; const auto result = NodeUtils::loadAuxiliaryDemLabels(self->projectPath(), labels); const auto binding = labels.value(self->m_auxiliaryDemLabel); if (result && binding.mode == NodeUtils::AuxiliaryDemLabelMode::WorkflowOutput && !binding.isPlanned()) self->retryAutomaticExecution(); } });
     });
 }
 
@@ -1681,7 +1681,13 @@ bool S1TopsBackGeocodingNode::prepareToStart()
         m_preparedDemExecutionSnapshot.inputGeometry = inputGeometry;
         m_demPath = binding.rasterPath;
         m_auxiliaryDemReferenceData = std::make_shared<AuxiliaryDemReferenceData>(binding.resourceId, binding.pinnedProvenanceId, 1);
-        m_demInputData = std::make_shared<DEMFileData>(binding.rasterPath, QStringLiteral("DEM Label"), binding.identityH5Path);
+    }
+    if ((m_auxiliaryDemEntityData || !m_auxiliaryDemLabel.isEmpty()) &&
+        !m_preparedDemExecutionSnapshot.isValid()) {
+        const QString error = QStringLiteral("准备好的 DEM 执行快照不完整（缺少资源ID、覆盖几何或大地水准面绑定）。");
+        setStartFailureMessage(error);
+        setLastErrorMessage(error);
+        return false;
     }
     setStartFailureMessage(QString());
     if (!validateInputs())
@@ -1851,6 +1857,16 @@ void S1TopsBackGeocodingNode::executeProcessing()
     descriptorProvenance.insert(QStringLiteral("producer"), name());
     descriptorProvenance.insert(QStringLiteral("output_port"),
                                 QStringLiteral("s1_tops_back_geocoding.output.back_geocoded_complex_sar"));
+    const QJsonObject inputGeometry = NodeUtils::inputGeometryFromProductDescriptor(
+        m_inputData ? m_inputData->physicalProductDescriptor() : ProductDescriptor::Ptr());
+    for (const QString& key : {QStringLiteral("minLon"), QStringLiteral("maxLon"),
+                               QStringLiteral("minLat"), QStringLiteral("maxLat")}) {
+        if (inputGeometry.value(key).isDouble()) {
+            descriptorProvenance.insert(key, QString::number(inputGeometry.value(key).toDouble(), 'g', 17));
+        }
+    }
+    const QString inputCrsWkt = inputGeometry.value(QStringLiteral("crsWkt")).toString().trimmed();
+    if (!inputCrsWkt.isEmpty()) descriptorProvenance.insert(QStringLiteral("crsWkt"), inputCrsWkt);
     if (!NodeUtils::setOutputTransactionProductDescriptor(
             m_outputTransaction, ProductDescriptor::create(
                 QStringLiteral("back_geocoded_complex_sar"), QStringLiteral("sat-explorer-product"), 1,
@@ -2118,6 +2134,16 @@ void S1TopsBackGeocodingNode::finalizeStagedTransaction(quint64 generation)
     coverageDescriptorProvenance.insert(QStringLiteral("producer"), name());
     coverageDescriptorProvenance.insert(QStringLiteral("output_port"),
                                         QStringLiteral("s1_tops_back_geocoding.output.back_geocoded_complex_sar"));
+    const QJsonObject inputGeometry = NodeUtils::inputGeometryFromProductDescriptor(
+        m_inputData ? m_inputData->physicalProductDescriptor() : ProductDescriptor::Ptr());
+    for (const QString& key : {QStringLiteral("minLon"), QStringLiteral("maxLon"),
+                               QStringLiteral("minLat"), QStringLiteral("maxLat")}) {
+        if (inputGeometry.value(key).isDouble()) {
+            coverageDescriptorProvenance.insert(key, QString::number(inputGeometry.value(key).toDouble(), 'g', 17));
+        }
+    }
+    const QString inputCrsWkt = inputGeometry.value(QStringLiteral("crsWkt")).toString().trimmed();
+    if (!inputCrsWkt.isEmpty()) coverageDescriptorProvenance.insert(QStringLiteral("crsWkt"), inputCrsWkt);
     if (!NodeUtils::setOutputTransactionProductDescriptor(
             m_outputTransaction, ProductDescriptor::create(
                 QStringLiteral("back_geocoded_complex_sar"), QStringLiteral("sat-explorer-product"), 1,

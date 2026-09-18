@@ -14,6 +14,8 @@
 #include <QByteArray>
 #include <QRegularExpression>
 #include <cmath>
+#include <climits>
+#include <cstdint>
 #include <limits>
 #include <vector>
 
@@ -58,12 +60,17 @@ SnaphuRunOptionsV1 makeSnaphuRunOptions(const SnaphuUiOptions& uiOptions)
     options.tileCols = uiOptions.tileCols;
     options.rowOverlap = uiOptions.rowOverlap;
     options.colOverlap = uiOptions.colOverlap;
-    // Windows SNAPHU currently serializes tile execution internally.
-    options.requestedProcessCount = 1;
+    // 分片驱动：1 = 既有单进程路径；>1 时由 DLL 起多个 worker 并行解缠，随后统一装配。
+    // Windows 版 SNAPHU 自身不能 fork，分片并行由 DLL 侧编排（DOTILEMASKFILE + --assemble）。
+    options.requestedProcessCount = qBound<quint32>(1u, uiOptions.tileWorkerCount, 256u);
     options.wallTimeoutMilliseconds = uiOptions.wallTimeoutMilliseconds;
     options.heartbeatMilliseconds = 1000;
+    options.statisticalCostMode = uiOptions.statisticalCostMode;
     if (uiOptions.keepArtifactsOnSuccess) {
         options.flags |= SNAPHU_RUN_OPTION_KEEP_ARTIFACTS_ON_SUCCESS;
+    }
+    if (uiOptions.assembleOnly) {
+        options.flags |= SNAPHU_RUN_OPTION_ASSEMBLE_ONLY;
     }
     return options;
 }
@@ -88,7 +95,8 @@ QString diagnosticFailureMessage(const QString& operation, const UnwrapDiagnosti
 {
     const QString tool = diagnosticString(diagnostic.tool, sizeof(diagnostic.tool));
     const QString summary = diagnosticString(diagnostic.summary, sizeof(diagnostic.summary));
-    return QStringLiteral("%1 failed (%2, stage=%3, status=%4, win32Error=%5, exitCode=%6): %7")
+    const QString stderrTail = diagnosticString(diagnostic.stderrTail, sizeof(diagnostic.stderrTail)).trimmed();
+    QString msg = QStringLiteral("%1 failed (%2, stage=%3, status=%4, win32Error=%5, exitCode=%6): %7")
         .arg(operation,
              tool.isEmpty() ? QStringLiteral("unwrap") : tool,
              diagnosticStageName(diagnostic.stage))
@@ -96,6 +104,13 @@ QString diagnosticFailureMessage(const QString& operation, const UnwrapDiagnosti
         .arg(diagnostic.win32Error)
         .arg(diagnostic.exitCode)
         .arg(summary.isEmpty() ? QStringLiteral("No diagnostic summary.") : summary);
+    if (!stderrTail.isEmpty()) {
+        QString cleanStderr = stderrTail;
+        cleanStderr.replace(QLatin1Char('\r'), QLatin1String(""));
+        cleanStderr.replace(QLatin1Char('\n'), QLatin1String(" | "));
+        msg += QStringLiteral(" | stderr: %1").arg(cleanStderr);
+    }
+    return msg;
 }
 
 struct UnwrapAmplitudeStatus
@@ -167,6 +182,239 @@ bool readOffset(const QString& h5Path, const char* dataset, int& offset, QString
         return false;
     }
     offset = value.at<int>(0, 0);
+    return true;
+}
+
+bool auditAndNormalizeMcfInputs(const cv::Mat& phase,
+                                const cv::Mat& coherence,
+                                cv::Mat& residue,
+                                qint64& normalizedResidues,
+                                qint64& nonZeroResidues,
+                                QString& error)
+{
+    normalizedResidues = 0;
+    nonZeroResidues = 0;
+    if (phase.empty() || phase.type() != CV_64F || phase.channels() != 1 ||
+        coherence.empty() || coherence.type() != CV_64F || coherence.channels() != 1 ||
+        residue.empty() || residue.type() != CV_64F || residue.channels() != 1) {
+        error = QStringLiteral("MCF 输入矩阵类型或尺寸无效");
+        return false;
+    }
+    if (coherence.size() != phase.size() ||
+        residue.rows != phase.rows - 1 || residue.cols != phase.cols - 1) {
+        error = QStringLiteral("MCF 输入矩阵尺寸不匹配：phase=%1x%2, coherence=%3x%4, residue=%5x%6")
+            .arg(phase.rows).arg(phase.cols)
+            .arg(coherence.rows).arg(coherence.cols)
+            .arg(residue.rows).arg(residue.cols);
+        return false;
+    }
+
+    for (int row = 0; row < phase.rows; ++row) {
+        const double* values = phase.ptr<double>(row);
+        for (int column = 0; column < phase.cols; ++column) {
+            if (!std::isfinite(values[column])) {
+                error = QStringLiteral("MCF phase 包含非有限值：row=%1, col=%2")
+                    .arg(row).arg(column);
+                return false;
+            }
+        }
+    }
+    for (int row = 0; row < coherence.rows; ++row) {
+        const double* values = coherence.ptr<double>(row);
+        for (int column = 0; column < coherence.cols; ++column) {
+            if (!std::isfinite(values[column]) || values[column] < 0.0) {
+                error = QStringLiteral("MCF coherence 包含非法值：row=%1, col=%2, value=%3")
+                    .arg(row).arg(column).arg(values[column], 0, 'g', 17);
+                return false;
+            }
+        }
+    }
+
+    // Utils::write_DIMACS() serializes residue supplies as integers. The
+    // residue calculation is mathematically integral, but can produce values
+    // such as 1.0000000000000002 after floating-point wrapping.
+    constexpr double kResidueIntegerTolerance = 1e-9;
+    for (int row = 0; row < residue.rows; ++row) {
+        double* values = residue.ptr<double>(row);
+        for (int column = 0; column < residue.cols; ++column) {
+            const double value = values[column];
+            if (!std::isfinite(value)) {
+                error = QStringLiteral("MCF residue 包含非有限值：row=%1, col=%2")
+                    .arg(row).arg(column);
+                return false;
+            }
+            if (std::fabs(value) <= 0.5) {
+                continue;
+            }
+            ++nonZeroResidues;
+            const double rounded = std::round(value);
+            if (!std::isfinite(rounded) || std::fabs(value - rounded) > kResidueIntegerTolerance) {
+                error = QStringLiteral("MCF residue 不是整数：row=%1, col=%2, value=%3")
+                    .arg(row).arg(column).arg(value, 0, 'g', 17);
+                return false;
+            }
+            if (value != rounded) {
+                values[column] = rounded;
+                ++normalizedResidues;
+            }
+        }
+    }
+    return true;
+}
+
+// Keep the UI gate aligned with Core's CS2 working-set estimate so a clearly
+// unsupported network is rejected before the expensive coherence calculation.
+struct UiCs2NodeLayoutEstimate
+{
+    int64_t excess;
+    int64_t price;
+    void* first;
+    void* current;
+    void* suspended;
+    void* qNext;
+    void* bucketNext;
+    void* bucketPrevious;
+    long rank;
+    long input;
+};
+
+struct UiCs2ArcLayoutEstimate
+{
+    long residualCapacity;
+    int64_t cost;
+    void* head;
+    void* sister;
+    long sourceIndex;
+};
+
+struct UiCs2BucketLayoutEstimate
+{
+    void* first;
+};
+
+struct UiMcfInputArcLayoutEstimate
+{
+    long tail;
+    long head;
+    long lower;
+    long upper;
+    long long cost;
+};
+
+struct McfDimensionPreflight
+{
+    qint64 nodes = 0;
+    qint64 arcs = 0;
+    quint64 estimatedWorkingSetBytes = 0;
+    QString failure;
+};
+
+constexpr quint64 kMcfWorkingSetBudgetBytes = 8ULL * 1024ULL * 1024ULL * 1024ULL;
+
+bool checkedMcfAdd(quint64 left, quint64 right, quint64& output)
+{
+    if (right > (std::numeric_limits<quint64>::max)() - left) return false;
+    output = left + right;
+    return true;
+}
+
+bool checkedMcfMultiply(quint64 left, quint64 right, quint64& output)
+{
+    if (left != 0 && right > (std::numeric_limits<quint64>::max)() / left) return false;
+    output = left * right;
+    return true;
+}
+
+QString formatMcfBytes(quint64 bytes)
+{
+    return QStringLiteral("%1 GiB").arg(
+        static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0), 0, 'f', 1);
+}
+
+bool preflightMcfDimensions(int phaseRows, int phaseCols, McfDimensionPreflight& report)
+{
+    report = McfDimensionPreflight{};
+    if (phaseRows < 3 || phaseCols < 3) {
+        report.failure = QStringLiteral("MCF phase 尺寸不支持：至少需要 3x3，当前为 %1x%2")
+            .arg(phaseRows).arg(phaseCols);
+        return false;
+    }
+
+    const quint64 residueRows = static_cast<quint64>(phaseRows - 1);
+    const quint64 residueCols = static_cast<quint64>(phaseCols - 1);
+    quint64 pixelCount = 0;
+    quint64 nodes = 0;
+    quint64 arcs = 0;
+    quint64 term = 0;
+    if (!checkedMcfMultiply(residueRows, residueCols, pixelCount) ||
+        !checkedMcfAdd(pixelCount, 1, nodes) ||
+        !checkedMcfMultiply(2, residueRows - 1, term) ||
+        !checkedMcfMultiply(term, residueCols, term) ||
+        !checkedMcfAdd(arcs, term, arcs) ||
+        !checkedMcfMultiply(2, residueRows, term) ||
+        !checkedMcfMultiply(term, residueCols - 1, term) ||
+        !checkedMcfAdd(arcs, term, arcs) ||
+        !checkedMcfMultiply(4, residueCols, term) ||
+        !checkedMcfAdd(arcs, term, arcs) ||
+        !checkedMcfMultiply(4, residueRows - 2, term) ||
+        !checkedMcfAdd(arcs, term, arcs)) {
+        report.failure = QStringLiteral("MCF 网络尺寸计算溢出");
+        return false;
+    }
+    if (nodes > static_cast<quint64>((std::numeric_limits<qint64>::max)()) ||
+        arcs > static_cast<quint64>((std::numeric_limits<qint64>::max)()) ||
+        nodes > static_cast<quint64>(LONG_MAX) || arcs > static_cast<quint64>(LONG_MAX)) {
+        report.nodes = nodes > static_cast<quint64>((std::numeric_limits<qint64>::max)())
+            ? (std::numeric_limits<qint64>::max)() : static_cast<qint64>(nodes);
+        report.arcs = arcs > static_cast<quint64>((std::numeric_limits<qint64>::max)())
+            ? (std::numeric_limits<qint64>::max)() : static_cast<qint64>(arcs);
+        report.failure = QStringLiteral("MCF 网络规模超过 DIMACS/solver 整数限制：nodes=%1, arcs=%2")
+            .arg(QString::number(nodes)).arg(QString::number(arcs));
+        return false;
+    }
+
+    report.nodes = static_cast<qint64>(nodes);
+    report.arcs = static_cast<qint64>(arcs);
+    quint64 directedArcSlots = 0;
+    quint64 twoArcSlots = 0;
+    quint64 bucketCount = 0;
+    quint64 count = 0;
+    if (!checkedMcfMultiply(2, arcs, twoArcSlots) ||
+        !checkedMcfAdd(twoArcSlots, 1, directedArcSlots) ||
+        !checkedMcfAdd(nodes, 1, bucketCount) ||
+        !checkedMcfMultiply(bucketCount, 12, bucketCount) ||
+        !checkedMcfAdd(bucketCount, 2, bucketCount) ||
+        !checkedMcfAdd(nodes, 2, count)) {
+        report.failure = QStringLiteral("MCF 工作集估算溢出");
+        return false;
+    }
+
+    quint64 bytes = 0;
+    const auto addAllocation = [&bytes](quint64 itemCount, size_t itemSize) {
+        quint64 allocation = 0;
+        quint64 next = 0;
+        return checkedMcfMultiply(itemCount, static_cast<quint64>(itemSize), allocation) &&
+            checkedMcfAdd(bytes, allocation, next) && (bytes = next, true);
+    };
+    if (!addAllocation(count, sizeof(UiCs2NodeLayoutEstimate)) ||
+        !addAllocation(directedArcSlots, sizeof(UiCs2ArcLayoutEstimate)) ||
+        !addAllocation(twoArcSlots, sizeof(long)) ||
+        !addAllocation(twoArcSlots, sizeof(long)) ||
+        !addAllocation(count, sizeof(long)) ||
+        !addAllocation(bucketCount, sizeof(UiCs2BucketLayoutEstimate)) ||
+        !addAllocation(nodes, sizeof(int64_t)) ||
+        !addAllocation(arcs, sizeof(UiMcfInputArcLayoutEstimate)) ||
+        !addAllocation(nodes, sizeof(long long)) ||
+        !addAllocation(arcs, sizeof(long))) {
+        report.failure = QStringLiteral("MCF 工作集估算溢出");
+        return false;
+    }
+    report.estimatedWorkingSetBytes = bytes;
+    if (bytes > kMcfWorkingSetBudgetBytes) {
+        report.failure = QStringLiteral(
+            "MCF 网络规模不受当前 CS2 实现支持；建议使用 SNAPHU tiled 或 SPD Guided");
+        return false;
+    }
     return true;
 }
 
@@ -361,12 +609,6 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
             finishCancelled();
             return;
-        }
-        const QString stderrTail = diagnosticString(diagnostic.stderrTail, sizeof(diagnostic.stderrTail));
-        if (!stderrTail.isEmpty()) {
-            InSARLogManager::LogDiagnostic(InSARLogManager::LevelWarning, "UnwrapWorker",
-                QStringLiteral("%1 stderr: %2").arg(operation, stderrTail),
-                LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile, QStringLiteral("snaphu.stderr"));
         }
         emit errorProcess(diagnosticFailureMessage(operation, diagnostic, result));
     };
@@ -569,7 +811,8 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
 
     for (int i = 0; i < image_number; ++i) {
         QString phaseValidityError;
-        if (!NodeUtils::validatePhaseValidityContract(phase_path.at(i), method != 1, &phaseValidityError)) {
+        const bool supportsMaskedPhase = method == 1 || method == 3;
+        if (!NodeUtils::validatePhaseValidityContract(phase_path.at(i), !supportsMaskedPhase, &phaseValidityError)) {
             emit errorProcess(phaseValidityError);
             return;
         }
@@ -651,10 +894,64 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
                 return;
             }
 
+            McfDimensionPreflight dimensionPreflight;
+            if (!preflightMcfDimensions(phase.rows, phase.cols, dimensionPreflight)) {
+                const QString detail = QStringLiteral(
+                    "%1：phase=%2x%3, nodes=%4, arcs=%5, estimatedWorkingSet=%6, budget=%7")
+                    .arg(dimensionPreflight.failure)
+                    .arg(phase.rows).arg(phase.cols)
+                    .arg(dimensionPreflight.nodes).arg(dimensionPreflight.arcs)
+                    .arg(formatMcfBytes(dimensionPreflight.estimatedWorkingSetBytes))
+                    .arg(formatMcfBytes(kMcfWorkingSetBudgetBytes));
+                InSARLogManager::LogDebug("UnwrapWorker",
+                    QStringLiteral("MCF dimension preflight rejected: %1").arg(detail),
+                    "unwrap.mcf.preflight");
+                emit errorProcess(QStringLiteral("MCF 网络规模预检失败：%1").arg(detail));
+                return;
+            }
+            InSARLogManager::LogDebug("UnwrapWorker",
+                QStringLiteral("MCF dimension preflight passed: phase=%1x%2, nodes=%3, arcs=%4, estimatedWorkingSet=%5, budget=%6")
+                    .arg(phase.rows).arg(phase.cols)
+                    .arg(dimensionPreflight.nodes).arg(dimensionPreflight.arcs)
+                    .arg(formatMcfBytes(dimensionPreflight.estimatedWorkingSetBytes))
+                    .arg(formatMcfBytes(kMcfWorkingSetBudgetBytes)),
+                "unwrap.mcf.preflight");
+
             Mat phase_unwrap;
             Mat coherence, residue;
-            ret = util.phase_axial_concentration(phase, coherence);
+            InSARLogManager::LogDebug("UnwrapWorker",
+                QStringLiteral("MCF coherence calculation started after dimension preflight: phase=%1x%2")
+                    .arg(phase.rows).arg(phase.cols),
+                "unwrap.mcf.preflight");
+            ret = util.phase_axial_concentration(phase, coherence, unwrapProgressCallback);
+            if (ret == -2 || QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+                finishCancelled();
+                return;
+            }
+            if (ret < 0) {
+                failImage(i, QStringLiteral("calculating coherence"), ret);
+                return;
+            }
             ret = util.residue(phase, residue);
+            if (ret < 0) {
+                failImage(i, QStringLiteral("calculating residue"), ret);
+                return;
+            }
+            qint64 normalizedResidues = 0;
+            qint64 nonZeroResidues = 0;
+            QString mcfInputError;
+            if (!auditAndNormalizeMcfInputs(phase, coherence, residue,
+                                             normalizedResidues, nonZeroResidues, mcfInputError)) {
+                emit errorProcess(QStringLiteral("MCF 输入预检失败：%1").arg(mcfInputError));
+                return;
+            }
+            InSARLogManager::LogDebug("UnwrapWorker",
+                QStringLiteral("MCF input preflight passed: coherence=%1x%2, residue=%3x%4, nonZeroResidues=%5, normalizedResidues=%6, networkNodes=%7, networkArcs=%8")
+                    .arg(coherence.rows).arg(coherence.cols)
+                    .arg(residue.rows).arg(residue.cols)
+                    .arg(nonZeroResidues).arg(normalizedResidues)
+                    .arg(dimensionPreflight.nodes).arg(dimensionPreflight.arcs),
+                "unwrap.mcf.preflight");
             QString app_path = QCoreApplication::applicationDirPath();
             UnwrapDiagnostic diagnostic = {};
             diagnostic.structSize = sizeof(diagnostic);
@@ -703,6 +1000,23 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
                 return;
             }
 
+            Mat validMask;
+            const bool hasV2ValidMask = NodeUtils::readMatFromH5(phase_path.at(i), "phase_valid_mask",
+                validMask, CV_8U);
+            if (hasV2ValidMask && (validMask.size() != phase.size() || validMask.type() != CV_8UC1)) {
+                emit errorProcess(QStringLiteral("SNAPHU 输入 phase_valid_mask 与相位网格不一致：%1")
+                                      .arg(phase_path.at(i)));
+                return;
+            }
+            const int validPixelCount = hasV2ValidMask ? countNonZero(validMask) : 0;
+            const bool hasMaskedPixels = hasV2ValidMask &&
+                static_cast<qint64>(validPixelCount) != static_cast<qint64>(validMask.rows) * validMask.cols;
+            if (hasMaskedPixels) {
+                InSARLogManager::LogInfo("UnwrapWorker", QStringLiteral(
+                    "SNAPHU will apply the phase-validity mask: %1 invalid pixels.")
+                    .arg(static_cast<qint64>(validMask.rows) * validMask.cols - validPixelCount));
+            }
+
             Mat phase_unwrap;
             QString app_path = QCoreApplication::applicationDirPath();
             QTemporaryDir snaphuWorkDir;
@@ -713,10 +1027,27 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             UnwrapDiagnostic diagnostic = {};
             diagnostic.structSize = sizeof(diagnostic);
             const SnaphuRunOptionsV1 options = makeSnaphuRunOptions(snaphuOptions);
-            ret = unwrap.SnaphuFileEx2(phase_path.at(i).toStdString().c_str(), phase_unwrap,
-                                       save_path.toStdString().c_str(), snaphuWorkDir.path().toStdString().c_str(),
-                                       app_path.toStdString().c_str(), &options, snaphuRunEventCallback, this,
-                                       &diagnostic);
+            // 记录生效的 SNAPHU 统计代价模式，便于与外部参考（SNAP 导出默认 DEFO）对标
+            {
+                const QString costModeName = snaphuOptions.statisticalCostMode == 1 ? QStringLiteral("DEFO")
+                    : (snaphuOptions.statisticalCostMode == 2 ? QStringLiteral("SMOOTH") : QStringLiteral("TOPO"));
+                InSARLogManager::LogInfo("UnwrapWorker", QStringLiteral(
+                    "SNAPHU 参数：统计代价模式=%1，分块=%2x%3，重叠=%4/%5")
+                    .arg(costModeName)
+                    .arg(snaphuOptions.tileRows).arg(snaphuOptions.tileCols)
+                    .arg(snaphuOptions.rowOverlap).arg(snaphuOptions.colOverlap));
+            }
+            if (hasMaskedPixels) {
+                ret = unwrap.SnaphuFileMaskedEx2(phase_path.at(i).toStdString().c_str(), validMask, phase_unwrap,
+                                                  save_path.toStdString().c_str(), snaphuWorkDir.path().toStdString().c_str(),
+                                                  app_path.toStdString().c_str(), &options, snaphuRunEventCallback, this,
+                                                  &diagnostic);
+            } else {
+                ret = unwrap.SnaphuFileEx2(phase_path.at(i).toStdString().c_str(), phase_unwrap,
+                                           save_path.toStdString().c_str(), snaphuWorkDir.path().toStdString().c_str(),
+                                           app_path.toStdString().c_str(), &options, snaphuRunEventCallback, this,
+                                           &diagnostic);
+            }
             if (ret != 0 || snaphuOptions.keepArtifactsOnSuccess) {
                 snaphuWorkDir.setAutoRemove(false);
                 InSARLogManager::LogInfo("UnwrapWorker", QStringLiteral("SNAPHU artifacts retained at: %1")
@@ -725,6 +1056,29 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             if (ret != 0) {
                 failDiagnostic(QStringLiteral("SNAPHU"), diagnostic, ret);
                 return;
+            }
+            if (hasMaskedPixels) {
+                if (phase_unwrap.size() != validMask.size()) {
+                    emit errorProcess(QStringLiteral("SNAPHU 输出网格与 phase_valid_mask 不一致：%1")
+                                          .arg(phase_path.at(i)));
+                    return;
+                }
+                if (phase_unwrap.type() != CV_64F) {
+                    phase_unwrap.convertTo(phase_unwrap, CV_64F);
+                }
+                for (int row = 0; row < phase_unwrap.rows; ++row) {
+                    const uchar* maskRow = validMask.ptr<uchar>(row);
+                    double* outputRow = phase_unwrap.ptr<double>(row);
+                    for (int column = 0; column < phase_unwrap.cols; ++column) {
+                        if (maskRow[column] == 0) {
+                            outputRow[column] = std::numeric_limits<double>::quiet_NaN();
+                        } else if (!std::isfinite(outputRow[column])) {
+                            emit errorProcess(QStringLiteral("SNAPHU 输出的有效相位包含非有限像元：%1")
+                                                  .arg(phase_path.at(i)));
+                            return;
+                        }
+                    }
+                }
             }
             const QString diagnosticSummary = diagnosticString(diagnostic.summary, sizeof(diagnostic.summary));
             if (!diagnosticSummary.isEmpty()) {

@@ -538,9 +538,14 @@ void Unwrap_ui::updateSnaphuOptionWidgets()
 {
     if (!m_snaphuTileRowsSpin) return;
     const bool tiled = m_snaphuTileRowsSpin->value() > 1 || m_snaphuTileColsSpin->value() > 1;
-    m_snaphuRowOverlapSpin->setMinimum(tiled ? 400 : 0);
-    m_snaphuColOverlapSpin->setMinimum(tiled ? 400 : 0);
-    if (!tiled) {
+    m_snaphuRowOverlapSpin->setEnabled(tiled);
+    m_snaphuColOverlapSpin->setEnabled(tiled);
+    m_snaphuRowOverlapSpin->setMinimum(tiled ? 50 : 0);
+    m_snaphuColOverlapSpin->setMinimum(tiled ? 50 : 0);
+    if (tiled) {
+        if (m_snaphuRowOverlapSpin->value() < 50) m_snaphuRowOverlapSpin->setValue(200);
+        if (m_snaphuColOverlapSpin->value() < 50) m_snaphuColOverlapSpin->setValue(200);
+    } else {
         m_snaphuRowOverlapSpin->setValue(0);
         m_snaphuColOverlapSpin->setValue(0);
     }

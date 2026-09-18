@@ -78,6 +78,9 @@ private:
     QSpinBox* m_snaphuColOverlapSpin;
     QSpinBox* m_snaphuTimeoutSpin;
     QCheckBox* m_snaphuKeepArtifactsCheck;
+    QComboBox* m_snaphuCostModeCombo;
+    QSpinBox* m_snaphuTileWorkerSpin;
+    QCheckBox* m_snaphuAssembleOnlyCheck;
 
     // Input/output data
     std::shared_ptr<ImportedFileData> m_inputData;
