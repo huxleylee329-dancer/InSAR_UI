@@ -193,7 +193,8 @@ bool resolveAuxiliaryDemLabel(const QString& projectRoot,
                               const QString& label,
                               AuxiliaryDemBinding& binding,
                               QString* errorMessage = nullptr,
-                              const QJsonObject& inputGeometry = QJsonObject());
+                              const QJsonObject& inputGeometry = QJsonObject(),
+                              bool requireGeoidModel = false);
 void registerResourceChangeCallback(const ResourceChangeCallback& callback);
 void registerAuxiliaryDemLabelTableChangedCallback(const AuxiliaryDemLabelTableChangedCallback& callback);
 void registerAuxiliaryDemLabelReboundCallback(const AuxiliaryDemLabelReboundCallback& callback);

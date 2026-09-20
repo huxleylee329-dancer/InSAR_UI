@@ -1083,7 +1083,8 @@ bool resolveAuxiliaryDemLabel(const QString& projectRoot,
                               const QString& label,
                               AuxiliaryDemBinding& binding,
                               QString* errorMessage,
-                              const QJsonObject& inputGeometry)
+                              const QJsonObject& inputGeometry,
+                              bool requireGeoidModel)
 {
     QMap<QString, AuxiliaryDemLabelBinding> labels;
     const QString key = normalizedDemLabel(label);
@@ -1111,7 +1112,7 @@ bool resolveAuxiliaryDemLabel(const QString& projectRoot,
         return false;
     }
     QtNodes::AuxiliaryDemReferenceData reference(value.resourceId, value.pinnedProvenanceId, 1);
-    return resolveAuxiliaryDemBinding(projectRoot, reference, binding, errorMessage, inputGeometry);
+    return resolveAuxiliaryDemBinding(projectRoot, reference, binding, errorMessage, inputGeometry, requireGeoidModel);
 }
 
 bool tombstoneAuxiliaryDemResource(const QString& projectRoot,
@@ -4898,6 +4899,29 @@ static int savePhaseFallbackJpg(const cv::Mat& matToSave, const QString& type, c
             phaseNormalized = cv::Mat::zeros(matToSave.size(), CV_64F);
         }
     }
+    else if (type == QStringLiteral("k_bias"))
+    {
+        // 排除 NaN / 无效值，归一化有效周期偏置像元并渲染伪彩
+        cv::Mat validMask = (matToSave == matToSave);
+        double minVal = 0.0, maxVal = 0.0;
+        if (cv::countNonZero(validMask) > 0)
+        {
+            cv::minMaxLoc(matToSave, &minVal, &maxVal, 0, 0, validMask);
+            if (maxVal - minVal > 1e-4)
+            {
+                phaseNormalized = (matToSave - minVal) * (255.0 / (maxVal - minVal));
+            }
+            else
+            {
+                phaseNormalized = cv::Mat::zeros(matToSave.size(), CV_64F);
+            }
+            phaseNormalized.setTo(0.0, ~validMask);
+        }
+        else
+        {
+            phaseNormalized = cv::Mat::zeros(matToSave.size(), CV_64F);
+        }
+    }
     else
     {
         phaseNormalized = (matToSave + 3.141592653589793) * (255.0 / (2.0 * 3.141592653589793));
@@ -5085,7 +5109,7 @@ static bool generateJpgPreviewFromH5Direct(const QString& h5Path, const QString&
         util.saveSLC(jpgPath.toLocal8Bit().constData(), 65, preview_SLC);
         return true;
     }
-    else if (type == "phase" || type == "coherence" || type == "dem")
+    else if (type == "phase" || type == "coherence" || type == "dem" || type == "k_bias")
     {
         int rows = 0, cols = 0;
         if (FC.get_dataset_dims(h5Path.toStdString().c_str(), type.toStdString().c_str(), &rows, &cols) != 0)
@@ -5128,6 +5152,10 @@ static bool generateJpgPreviewFromH5Direct(const QString& h5Path, const QString&
                 phase.setTo(std::numeric_limits<double>::quiet_NaN(), demNoDataMask);
                 ret = util.savephase(jpgPath.toStdString().c_str(), "jet", phase);
             }
+            else if (type == "k_bias")
+            {
+                ret = savePhaseFallback(phase, type);
+            }
             
             if (ret != 0)
             {
@@ -5164,7 +5192,9 @@ static bool generateJpgPreviewFromH5Direct(const QString& h5Path, const QString&
             if (block_dst_rows > 0 && block_dst_cols > 0)
             {
                 cv::Mat down_block;
-                cv::resize(block_phase, down_block, cv::Size(block_dst_cols, block_dst_rows), 0, 0, cv::INTER_AREA);
+                // k_bias 浮点矩阵含有大量 NaN（海面/低相干掩膜），INTER_AREA 局部加权求和会导致 NaN 扩散吃掉周围有效像元；改用 INTER_NEAREST 避免污染扩散
+                const int interpMode = (type == "k_bias") ? cv::INTER_NEAREST : cv::INTER_AREA;
+                cv::resize(block_phase, down_block, cv::Size(block_dst_cols, block_dst_rows), 0, 0, interpMode);
 
                 int r_dst = r / down_sample_times;
                 if (r_dst + block_dst_rows <= dst_rows)
@@ -5190,6 +5220,10 @@ static bool generateJpgPreviewFromH5Direct(const QString& h5Path, const QString&
         else if (type == "dem")
         {
             ret = util.savephase(jpgPath.toStdString().c_str(), "jet", downsampled_phase);
+        }
+        else if (type == "k_bias")
+        {
+            ret = savePhaseFallback(downsampled_phase, type);
         }
 
         if (ret != 0)

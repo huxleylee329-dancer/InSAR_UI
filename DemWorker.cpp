@@ -1111,7 +1111,7 @@ void DemWorker::Dem(DemAbsolutePhaseAnchorV2Request request)
                 return;
             }
 
-            Mat phaseDem;
+            Mat phaseDem, phaseKBias;
             DemAbsolutePhaseAnchorV2Request coreSnapshotRequest;
             DemPhaseAnchorInputSnapshot corePhaseSnapshot;
             const QString coreSnapshotDirectory = QDir(outputDirectory).absoluteFilePath(
@@ -1191,7 +1191,7 @@ void DemWorker::Dem(DemAbsolutePhaseAnchorV2Request request)
             diagnostics.progressUserData = &progressContext;
             InSARLogManager::LogDebug("DemWorker", QString("Calling DEM absolute-phase anchoring v2: callId=%1, phase=%2, iterations=%3, resourceId=%4")
                 .arg(QString::fromUtf8(callId), inputH5).arg(times).arg(request.auxiliaryDemSnapshot.binding.resourceId), "dem.dll.call.v2");
-            const int result = dem.dem_newton_iter_absolute_phase_anchor_v2(&coreRequest, phaseDem,
+            const int result = dem.dem_newton_iter_absolute_phase_anchor_v2(&coreRequest, phaseDem, phaseKBias,
                 &anchorResult, &diagnostics);
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
                 finishCancelled();
@@ -1281,6 +1281,11 @@ void DemWorker::Dem(DemAbsolutePhaseAnchorV2Request request)
                 !NodeUtils::writeMatToH5(outputH5, "dem", phaseDem)) {
                 emit errorProcess(QStringLiteral("Failed to create DEM output: ") + outputH5);
                 return;
+            }
+            if (!phaseKBias.empty() && phaseKBias.size() == phaseDem.size()) {
+                if (!NodeUtils::writeMatToH5(outputH5, "k_bias", phaseKBias)) {
+                    InSARLogManager::LogWarning("DemWorker", QString("Failed to write k_bias dataset to %1").arg(outputH5));
+                }
             }
             const Mat burstIndexMat(static_cast<int>(anchorResult.burstCount), 1, CV_32S, burstIndices.data());
             const Mat burstCountMat(static_cast<int>(anchorResult.burstCount), 1, CV_32S, candidateCountByBurst.data());

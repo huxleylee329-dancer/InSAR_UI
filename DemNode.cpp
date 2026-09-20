@@ -493,6 +493,39 @@ DemNode::DemNode()
     qRegisterMetaType<DemFileResult>("DemFileResult");
     qRegisterMetaType<DemAbsolutePhaseAnchorV2Request>("DemAbsolutePhaseAnchorV2Request");
     setExecutionMode(ExecutionMode::Automatic);
+
+    QPointer<DemNode> self(this);
+    NodeUtils::registerResourceChangeCallback([self](const QString& resourceId, const QString& provenanceId, NodeUtils::ResourceChangeKind kind) {
+        if (!self) return;
+        QTimer::singleShot(0, self.data(), [self, resourceId, provenanceId, kind]() {
+            if (!self) return;
+            self->refreshAuxiliaryDemLabels();
+            if (self->m_preparedAuxiliaryDemSnapshot.binding.resourceId != resourceId) return;
+            if (kind == NodeUtils::ResourceChangeKind::ProvenanceAdded && provenanceId != self->m_preparedAuxiliaryDemSnapshot.binding.pinnedProvenanceId) return;
+            self->m_preparedAuxiliaryDemSnapshot = NodeUtils::DemExecutionSnapshot();
+            self->setProgress(0);
+            self->setLastErrorMessage(QStringLiteral("外部 DEM 资源已变化，需要重新准备。"));
+            self->setState(ExecutionState::Pending);
+        });
+    });
+    NodeUtils::registerAuxiliaryDemLabelTableChangedCallback([self]() {
+        if (self) QTimer::singleShot(0, self.data(), [self]() { if (self) self->refreshAuxiliaryDemLabels(); });
+    });
+    NodeUtils::registerAuxiliaryDemLabelReboundCallback([self](const QString& label) {
+        if (!self) return;
+        QTimer::singleShot(0, self.data(), [self, label]() {
+            if (!self || self->m_auxiliaryDemLabel != label) return;
+            self->m_preparedAuxiliaryDemSnapshot = NodeUtils::DemExecutionSnapshot();
+            self->setProgress(0);
+            self->setState(ExecutionState::Pending);
+            QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels;
+            const auto result = NodeUtils::loadAuxiliaryDemLabels(self->projectPath(), labels);
+            const auto binding = labels.value(self->m_auxiliaryDemLabel);
+            if (result && binding.mode == NodeUtils::AuxiliaryDemLabelMode::WorkflowOutput && !binding.isPlanned()) {
+                self->retryAutomaticExecution();
+            }
+        });
+    });
 }
 
 DemNode::~DemNode()
@@ -522,8 +555,9 @@ NodeDataType DemNode::dataType(PortType portType, PortIndex portIndex) const
     {
         if (portIndex == 0)
             return NodeDataType{"insar_dem", "InSAR DEM"};
-        else
+        else if (portIndex == 1)
             return NodeDataType{"image_info", "Image Info"};
+        return NodeDataType();
     }
 }
 
@@ -540,7 +574,7 @@ QString DemNode::portCaption(PortType portType, PortIndex portIndex) const
         if (portIndex == 0)
             return QStringLiteral("解缠相位 *");
         if (portIndex == 1)
-            return QStringLiteral("外部 DEM *");
+            return QStringLiteral("外部 DEM ?");
     } else {
         if (portIndex == 0)
             return QStringLiteral("成果 *");
@@ -552,9 +586,42 @@ QString DemNode::portCaption(PortType portType, PortIndex portIndex) const
 
 bool DemNode::portIsOptional(PortType portType, PortIndex portIndex) const
 {
+    if (portType == PortType::In && portIndex == 1)
+        return true;
     if (portType == PortType::Out && portIndex == 1)
         return true;
     return false;
+}
+
+QString DemNode::portBindingSummary(PortType portType, PortIndex portIndex) const
+{
+    if (portType == PortType::In && portIndex == 1) {
+        if (!m_auxiliaryDemLabel.isEmpty()) {
+            QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels;
+            QString error;
+            if (NodeUtils::loadAuxiliaryDemLabels(projectPath(), labels, &error)) {
+                const auto binding = labels.value(NodeUtils::normalizedDemLabel(m_auxiliaryDemLabel));
+                if (!binding.label.isEmpty()) {
+                    QString detail;
+                    if (binding.mode == NodeUtils::AuxiliaryDemLabelMode::WorkflowOutput) {
+                        const QString status = binding.isPlanned() ? QStringLiteral("待生成") : QStringLiteral("就绪");
+                        const QString producerNode = workflowDemProducerNodeIdMap().value(binding.producerIdentity);
+                        detail = producerNode.isEmpty()
+                            ? status
+                            : QStringLiteral("节点 %1，%2").arg(producerNode, status);
+                    } else {
+                        detail = QStringLiteral("已注册资源");
+                    }
+                    return QStringLiteral("已绑定标签 @%1（%2）").arg(binding.label, detail);
+                }
+            }
+            const QString normalized = NodeUtils::normalizedDemLabel(m_auxiliaryDemLabel);
+            return workflowDeclaredDemLabels().contains(normalized)
+                ? QStringLiteral("已绑定标签 @%1（未找到注册条目）").arg(m_auxiliaryDemLabel)
+                : QStringLiteral("已绑定标签 @%1（无生产者）").arg(m_auxiliaryDemLabel);
+        }
+    }
+    return ExecutableNodeDelegateModel::portBindingSummary(portType, portIndex);
 }
 
 void DemNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
@@ -563,6 +630,12 @@ void DemNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
         m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
     } else if (port == 1) {
         m_auxiliaryDemData = std::dynamic_pointer_cast<AuxiliaryDemData>(data);
+        if (m_auxiliaryDemData) {
+            // 直连线接入后优先使用直连线，清空工程标签选择
+            m_auxiliaryDemLabel.clear();
+            if (m_demLabelCombo) m_demLabelCombo->setCurrentIndex(0);
+        }
+        updateParameterWidgetsEnableState(true);
     }
 
     if (port == 0 && m_inputData && m_outputNodeName.isEmpty()) {
@@ -574,8 +647,10 @@ void DemNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 
     ExecutableNodeDelegateModel::setInData(data, port);
 
-    // 恢复期不得清理：工程加载时本节点的输入尚未传播到位，清空会打掉刚恢复出来的输出。
-    if (!isRestoring() && (!m_inputData || m_inputData->filePaths().isEmpty() || !m_auxiliaryDemData)) {
+    const bool hasDem = (m_auxiliaryDemData != nullptr) || !m_auxiliaryDemLabel.isEmpty();
+    // 恢复期或当前已处于有效完成/警告状态时不得随意清理：工程加载或瞬时连线事件未就绪会打掉已有输出成果
+    const bool isCompletedOrWarning = (executionState() == ExecutionState::Completed || executionState() == ExecutionState::Warning);
+    if (!isRestoring() && !isCompletedOrWarning && (!m_inputData || m_inputData->filePaths().isEmpty() || !hasDem)) {
         // 输入缺失时除清空成员外还必须显式让出输出端口，否则下游仍持有旧的 NodeData 指针、
         // 在不重跑本节点的情况下继续消费陈旧数据。（与 DenoiseNode::setInData 的既有做法一致）
         m_outputData.reset();
@@ -606,6 +681,9 @@ QJsonObject DemNode::save() const
     modelJson["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : m_outputNodeName;
     modelJson["method"] = m_method;
     modelJson["times"] = m_timesEdit ? m_timesEdit->text().toInt() : m_times;
+    modelJson[QStringLiteral("auxiliaryDemLabel")] = m_auxiliaryDemLabel;
+    modelJson[QStringLiteral("auxiliaryDemLegacyResourceId")] = m_legacyDemResourceId;
+    modelJson[QStringLiteral("auxiliaryDemLegacyPinnedProvenanceId")] = m_legacyDemProvenanceId;
 
     return modelJson;
 }
@@ -621,6 +699,10 @@ void DemNode::load(QJsonObject const &json)
     QJsonValue vTimes = json["times"];
     if (!vTimes.isUndefined()) m_times = vTimes.toInt();
 
+    m_auxiliaryDemLabel = json.value(QStringLiteral("auxiliaryDemLabel")).toString().trimmed();
+    m_legacyDemResourceId = json.value(QStringLiteral("auxiliaryDemLegacyResourceId")).toString().trimmed();
+    m_legacyDemProvenanceId = json.value(QStringLiteral("auxiliaryDemLegacyPinnedProvenanceId")).toString().trimmed();
+
     // SOP Rule 15: load parameters BEFORE triggering validateAndRestoreOutput in base load
     ExecutableNodeDelegateModel::load(json);
 
@@ -629,6 +711,7 @@ void DemNode::load(QJsonObject const &json)
         m_methodCombo->setCurrentIndex(m_method - 1);
     }
     if (m_timesEdit) m_timesEdit->setText(QString::number(m_times));
+    refreshAuxiliaryDemLabels();
 
     onMethodChanged(m_method - 1);
 }
@@ -736,8 +819,90 @@ void DemNode::createWidget()
     outputLayout->addWidget(m_outputNodeNameEdit);
     layout->addLayout(outputLayout);
 
+    // 6. 外部 DEM 标签绑定（避免远距离拉线）
+    auto* demRow = new QHBoxLayout();
+    m_demPathLabel = new QLabel(QStringLiteral("外部 DEM:"));
+    m_demPathLabel->setFixedWidth(labelWidth);
+    m_demPathLabel->setStyleSheet("QLabel:disabled { color: #888888; }");
+
+    m_demLabelCombo = new QComboBox();
+    refreshAuxiliaryDemLabels();
+    connect(m_demLabelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, invalidateNodeData](int index) {
+        const QString nextLabel = index > 0 ? m_demLabelCombo->itemData(index).toString() : QString();
+        if (!nextLabel.isEmpty() && hasActiveInputConnection(1)) {
+            QMessageBox::warning(nullptr, QStringLiteral("外部 DEM"),
+                                 QStringLiteral("请先断开外部 DEM 输入端口的直连，再选择工程标签。"));
+            m_demLabelCombo->blockSignals(true);
+            const int previousIndex = m_demLabelCombo->findData(m_auxiliaryDemLabel);
+            m_demLabelCombo->setCurrentIndex(previousIndex >= 0 ? previousIndex : 0);
+            m_demLabelCombo->blockSignals(false);
+            return;
+        }
+        if (m_auxiliaryDemLabel != nextLabel) {
+            m_auxiliaryDemLabel = nextLabel;
+            if (!m_auxiliaryDemLabel.isEmpty()) {
+                m_auxiliaryDemData.reset();
+            }
+            invalidateNodeData();
+        }
+    });
+
+    demRow->addWidget(m_demPathLabel);
+    demRow->addWidget(m_demLabelCombo);
+    layout->addLayout(demRow);
+
     layout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 
+    updateParameterWidgetsEnableState(true);
+}
+
+void DemNode::refreshAuxiliaryDemLabels()
+{
+    if (!m_demLabelCombo) return;
+    const QSet<QString> declared = workflowDeclaredDemLabels();
+    const QHash<QString, QString> producerNodeIds = workflowDemProducerNodeIdMap();
+    QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels;
+    QString error;
+    NodeUtils::loadAuxiliaryDemLabels(projectPath(), labels, &error);
+    m_demLabelCombo->blockSignals(true);
+    m_demLabelCombo->clear();
+    m_demLabelCombo->addItem(QStringLiteral("不使用标签"), QString());
+    for (auto it = labels.constBegin(); it != labels.constEnd(); ++it) {
+        if (it.value().mode != NodeUtils::AuxiliaryDemLabelMode::WorkflowOutput) continue;
+        const QString normalized = NodeUtils::normalizedDemLabel(it.value().label);
+        if (declared.contains(normalized)) {
+            const QString status = it.value().isPlanned() ? QStringLiteral("待生成") : QStringLiteral("就绪");
+            const QString producerNode = producerNodeIds.value(it.value().producerIdentity);
+            if (producerNode.isEmpty()) {
+                m_demLabelCombo->addItem(QStringLiteral("@%1 (%2)").arg(it.value().label, status), it.value().label);
+            } else {
+                m_demLabelCombo->addItem(QStringLiteral("@%1 (%2, 节点 %3)").arg(it.value().label, status, producerNode), it.value().label);
+            }
+        } else if (NodeUtils::normalizedDemLabel(m_auxiliaryDemLabel) == normalized) {
+            m_demLabelCombo->addItem(QStringLiteral("@%1 (无生产者)").arg(it.value().label), it.value().label);
+        }
+    }
+    if (!labels.isEmpty()) m_demLabelCombo->insertSeparator(m_demLabelCombo->count());
+    for (auto it = labels.constBegin(); it != labels.constEnd(); ++it) {
+        if (it.value().mode != NodeUtils::AuxiliaryDemLabelMode::FixedResource) continue;
+        m_demLabelCombo->addItem(QStringLiteral("@%1 (已注册资源)").arg(it.value().label), it.value().label);
+    }
+    const int index = m_demLabelCombo->findData(m_auxiliaryDemLabel);
+    m_demLabelCombo->setCurrentIndex(index >= 0 ? index : 0);
+    m_demLabelCombo->blockSignals(false);
+}
+
+void DemNode::updateParameterWidgetsEnableState(bool enable)
+{
+    const bool isExec = m_thread && m_thread->isRunning();
+    const bool enableWidgets = enable && !isExec;
+    const bool hasDemConn = (m_auxiliaryDemData != nullptr);
+
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(enableWidgets);
+    if (m_methodCombo) m_methodCombo->setEnabled(enableWidgets);
+    if (m_timesEdit) m_timesEdit->setEnabled(enableWidgets);
+    if (m_demPathLabel) m_demPathLabel->setEnabled(enableWidgets && !hasDemConn);
+    if (m_demLabelCombo) m_demLabelCombo->setEnabled(enableWidgets && !hasDemConn);
     onMethodChanged(m_method - 1);
 }
 
@@ -777,7 +942,9 @@ bool DemNode::validateInputs() const
     if (!m_inputData || m_inputData->filePaths().isEmpty()) {
         return false;
     }
-    if (!m_auxiliaryDemData || !m_auxiliaryDemData->isValid()) {
+    const bool hasValidDirectDem = m_auxiliaryDemData && m_auxiliaryDemData->isValid();
+    const bool hasDemLabel = !m_auxiliaryDemLabel.isEmpty();
+    if (!hasValidDirectDem && !hasDemLabel) {
         return false;
     }
 
@@ -848,7 +1015,7 @@ bool DemNode::prepareToStart()
                       .arg(m_method)
                       .arg(m_times)
                       .arg(m_inputData ? QStringLiteral("true") : QStringLiteral("false"))
-                      .arg(m_auxiliaryDemData ? QStringLiteral("true") : QStringLiteral("false")),
+                      .arg((m_auxiliaryDemData != nullptr || !m_auxiliaryDemLabel.isEmpty()) ? QStringLiteral("true") : QStringLiteral("false")),
                   QStringLiteral("dem.v2.preflight"));
     if (!commitWidgetParametersForExecution()) {
         logV2Preflight(QStringLiteral("DEM v2 preflight rejected the iteration parameter."),
@@ -905,11 +1072,17 @@ bool DemNode::prepareToStart()
                                           : describeDescriptor(QStringLiteral("physical"), physicalDescriptor))
                       .arg(sameDescriptor ? QStringLiteral("true") : QStringLiteral("false")),
                   QStringLiteral("dem.v2.input_descriptor"));
-    logV2Preflight(QStringLiteral("DEM v2 auxiliary DEM input: resourceId=%1, provenanceId=%2, raster=%3, identityH5=%4, validMask=%5")
-                      .arg(m_auxiliaryDemData->resourceId(), m_auxiliaryDemData->pinnedProvenanceId(),
-                           m_auxiliaryDemData->rasterPath(), m_auxiliaryDemData->identityH5Path(),
-                           m_auxiliaryDemData->validMaskPath()),
-                  QStringLiteral("dem.v2.auxiliary_dem"));
+    if (m_auxiliaryDemData) {
+        logV2Preflight(QStringLiteral("DEM v2 auxiliary DEM direct input: resourceId=%1, provenanceId=%2, raster=%3, identityH5=%4, validMask=%5")
+                          .arg(m_auxiliaryDemData->resourceId(), m_auxiliaryDemData->pinnedProvenanceId(),
+                               m_auxiliaryDemData->rasterPath(), m_auxiliaryDemData->identityH5Path(),
+                               m_auxiliaryDemData->validMaskPath()),
+                      QStringLiteral("dem.v2.auxiliary_dem"));
+    } else {
+        logV2Preflight(QStringLiteral("DEM v2 auxiliary DEM label input: label=%1")
+                          .arg(m_auxiliaryDemLabel),
+                      QStringLiteral("dem.v2.auxiliary_dem"));
+    }
     QString identityError;
     if (!NodeUtils::validateH5Identities(srcPaths, m_inputData->physicalProductDescriptor(), &identityError)) {
         logV2Preflight(QStringLiteral("DEM v2 phase identity validation failed: %1").arg(identityError),
@@ -970,18 +1143,47 @@ bool DemNode::prepareToStart()
         setLastErrorMessage(geometryError);
         return false;
     }
+    if (hasActiveInputConnection(1) && !m_auxiliaryDemLabel.isEmpty()) {
+        const QString dualError = QStringLiteral("外部 DEM 不能同时使用直接连线和命名标签。");
+        setStartFailureMessage(dualError);
+        setLastErrorMessage(dualError);
+        return false;
+    }
+    if (!m_auxiliaryDemData && m_auxiliaryDemLabel.isEmpty()) {
+        const QString missingError = QStringLiteral("外部 DEM 是必需输入，必须通过直接连线或工程标签提供。");
+        setStartFailureMessage(missingError);
+        setLastErrorMessage(missingError);
+        return false;
+    }
     NodeUtils::AuxiliaryDemBinding resolvedBinding;
     QString bindingError;
-    if (!NodeUtils::resolveAuxiliaryDemBinding(m_preparedSavePath, *m_auxiliaryDemData,
-                                               resolvedBinding, &bindingError, inputGeometry, true)) {
-        if (bindingError.isEmpty()) {
-            bindingError = QStringLiteral("DEM absolute-phase anchoring v2 requires a managed auxiliary_terrain_dem binding with trusted geometry.");
+    if (m_auxiliaryDemData) {
+        if (!NodeUtils::resolveAuxiliaryDemBinding(m_preparedSavePath, *m_auxiliaryDemData,
+                                                   resolvedBinding, &bindingError, inputGeometry, true)) {
+            if (bindingError.isEmpty()) {
+                bindingError = QStringLiteral("DEM absolute-phase anchoring v2 requires a managed auxiliary_terrain_dem binding with trusted geometry.");
+            }
+            logV2Preflight(QStringLiteral("DEM v2 auxiliary DEM binding rejected: %1").arg(bindingError),
+                          QStringLiteral("dem.v2.auxiliary_dem.reject"));
+            setStartFailureMessage(bindingError);
+            setLastErrorMessage(bindingError);
+            return false;
         }
-        logV2Preflight(QStringLiteral("DEM v2 auxiliary DEM binding rejected: %1").arg(bindingError),
-                      QStringLiteral("dem.v2.auxiliary_dem.reject"));
-        setStartFailureMessage(bindingError);
-        setLastErrorMessage(bindingError);
-        return false;
+    } else if (!m_auxiliaryDemLabel.isEmpty()) {
+        if (!m_legacyDemResourceId.isEmpty() && !m_legacyDemProvenanceId.isEmpty()) {
+            NodeUtils::registerPendingAuxiliaryDemLabel({m_auxiliaryDemLabel, m_legacyDemResourceId, m_legacyDemProvenanceId});
+        }
+        if (!NodeUtils::resolveAuxiliaryDemLabel(m_preparedSavePath, m_auxiliaryDemLabel,
+                                                resolvedBinding, &bindingError, inputGeometry, true)) {
+            if (bindingError.isEmpty()) {
+                bindingError = QStringLiteral("无法解析工程标签对应的外部 DEM：%1").arg(m_auxiliaryDemLabel);
+            }
+            logV2Preflight(QStringLiteral("DEM v2 auxiliary DEM label binding rejected: %1").arg(bindingError),
+                          QStringLiteral("dem.v2.auxiliary_dem.reject"));
+            setStartFailureMessage(bindingError);
+            setLastErrorMessage(bindingError);
+            return false;
+        }
     }
     logV2Preflight(QStringLiteral("DEM v2 auxiliary DEM binding resolved: resourceId=%1, canonicalHash=%2, geoidId=%3, geoidPath=%4, geoidHash=%5")
                       .arg(resolvedBinding.resourceId, resolvedBinding.canonicalMetadataHash,
@@ -1019,9 +1221,7 @@ void DemNode::executeProcessing()
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         m_outputNodeName = m_preparedDstNode;
         
-        m_outputNodeNameEdit->setEnabled(true);
-        m_methodCombo->setEnabled(true);
-        onMethodChanged(m_method - 1);
+        updateParameterWidgetsEnableState(true);
 
         setState(ExecutionState::Running);
         setProgress(100);
@@ -1131,9 +1331,7 @@ void DemNode::executeProcessing()
     });
 
     // Disable inputs during execution
-    m_outputNodeNameEdit->setEnabled(false);
-    m_methodCombo->setEnabled(false);
-    if (m_timesEdit) m_timesEdit->setEnabled(false);
+    updateParameterWidgetsEnableState(false);
 
     deferAutomaticCompletion();
     m_thread->start();
@@ -1174,7 +1372,8 @@ void DemNode::onProcessingFinished()
         m_previewGenerationPending = false;
         ++m_previewGenerationId;
         NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("obsolete automatic execution"), projectXml());
-        m_outputData.reset(); m_imageInfoData.reset(); setOutputData(0, nullptr); setOutputData(1, nullptr);
+        m_outputData.reset(); m_imageInfoData.reset();
+        setOutputData(0, nullptr); setOutputData(1, nullptr);
         return;
     }
 
@@ -1281,7 +1480,19 @@ void DemNode::onProcessingFinished()
     NodeUtils::removeDataNodeFromProjectTree(NodeUtils::getProjectContext(_widget), dstNode);
     for (const DemFileResult& result : committedResults) publishDemResultToProjectTree(result);
     if (auto* iface = NodeUtils::getProjectContext(_widget)) iface->refreshProjectTree();
-    for (const QString& h5Path : h5Paths) { jpgPaths.append(QFileInfo(h5Path).absolutePath() + "/" + QFileInfo(h5Path).baseName() + ".jpg"); types.append(QStringLiteral("dem")); }
+    QStringList previewH5Paths;
+    for (const QString& h5Path : h5Paths) {
+        const QFileInfo info(h5Path);
+        jpgPaths.append(info.absolutePath() + "/" + info.baseName() + ".jpg");
+        types.append(QStringLiteral("dem"));
+        previewH5Paths.append(h5Path);
+
+        if (NodeUtils::probeH5DatasetMetadata(h5Path, QStringLiteral("k_bias"))) {
+            jpgPaths.append(info.absolutePath() + "/" + info.baseName() + "_k_bias.jpg");
+            types.append(QStringLiteral("k_bias"));
+            previewH5Paths.append(h5Path);
+        }
+    }
 
     m_outputData = std::make_shared<InsarDemData>(h5Paths, m_outputTransaction.runId);
     m_outputData->setProductDescriptor(ProductDescriptor::fromJson(
@@ -1336,10 +1547,7 @@ void DemNode::onProcessingFinished()
                 m_imageInfoData.reset();
                 setOutputData(1, nullptr);
             }
-            m_outputNodeNameEdit->setEnabled(true);
-            m_methodCombo->setEnabled(true);
-            if (m_timesEdit) m_timesEdit->setEnabled(true);
-            onMethodChanged(m_method - 1);
+            updateParameterWidgetsEnableState(true);
 
             setState(ExecutionState::Running);
             setProgress(100);
@@ -1347,9 +1555,9 @@ void DemNode::onProcessingFinished()
             finishDemExecution();
         });
 
-        QFuture<void> future = QtConcurrent::run([h5Paths, previewJpgPaths, types]() {
-            for (int i = 0; i < h5Paths.size(); ++i) {
-                NodeUtils::generateJpgPreviewFromH5(h5Paths[i], previewJpgPaths[i], types[i]);
+        QFuture<void> future = QtConcurrent::run([previewH5Paths, previewJpgPaths, types]() {
+            for (int i = 0; i < previewJpgPaths.size() && i < previewH5Paths.size(); ++i) {
+                NodeUtils::generateJpgPreviewFromH5(previewH5Paths[i], previewJpgPaths[i], types[i]);
             }
         });
         m_remedyWatcher.setFuture(future);
@@ -1359,10 +1567,7 @@ void DemNode::onProcessingFinished()
         m_imageInfoData.reset();
         setOutputData(1, nullptr);
 
-        m_outputNodeNameEdit->setEnabled(true);
-        m_methodCombo->setEnabled(true);
-        if (m_timesEdit) m_timesEdit->setEnabled(true);
-        onMethodChanged(m_method - 1);
+        updateParameterWidgetsEnableState(true);
 
         setState(ExecutionState::Running);
         setProgress(100);
@@ -1454,15 +1659,13 @@ void DemNode::onError(const QString& error)
         m_remedyWatcher.cancel();
     }
     NodeUtils::abandonOutputTransaction(m_outputTransaction, error, projectXml());
-    m_outputData.reset(); m_imageInfoData.reset(); setOutputData(0, nullptr); setOutputData(1, nullptr);
+    m_outputData.reset(); m_imageInfoData.reset();
+    setOutputData(0, nullptr); setOutputData(1, nullptr);
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
 
-    m_outputNodeNameEdit->setEnabled(true);
-    m_methodCombo->setEnabled(true);
-    if (m_timesEdit) m_timesEdit->setEnabled(true);
-    onMethodChanged(m_method - 1);
+    updateParameterWidgetsEnableState(true);
 
     setLastErrorMessage(error);
     setState(ExecutionState::Error);
@@ -1478,7 +1681,8 @@ void DemNode::onCancelled()
         m_remedyWatcher.cancel();
     }
     NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"), projectXml());
-    m_outputData.reset(); m_imageInfoData.reset(); setOutputData(0, nullptr); setOutputData(1, nullptr);
+    m_outputData.reset(); m_imageInfoData.reset();
+    setOutputData(0, nullptr); setOutputData(1, nullptr);
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -1486,9 +1690,7 @@ void DemNode::onCancelled()
     setState(ExecutionState::Stopped);
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();
-    m_outputNodeNameEdit->setEnabled(true);
-    m_methodCombo->setEnabled(true);
-    if (m_timesEdit) m_timesEdit->setEnabled(true);
+    updateParameterWidgetsEnableState(true);
 }
 
 void DemNode::onModelUpdated(QStandardItemModel* model)
@@ -1588,11 +1790,19 @@ bool DemNode::validateAndRestoreOutput()
     }
     QStringList expectedJpgPaths;
     QStringList types;
+    QStringList expectedH5sForJpg;
 
     for (const QString& h5Path : h5Paths) {
         const QFileInfo info(h5Path);
         expectedJpgPaths.append(info.absolutePath() + "/" + info.baseName() + ".jpg");
-        types.append("dem");
+        types.append(QStringLiteral("dem"));
+        expectedH5sForJpg.append(h5Path);
+
+        if (NodeUtils::probeH5DatasetMetadata(h5Path, QStringLiteral("k_bias"))) {
+            expectedJpgPaths.append(info.absolutePath() + "/" + info.baseName() + "_k_bias.jpg");
+            types.append(QStringLiteral("k_bias"));
+            expectedH5sForJpg.append(h5Path);
+        }
     }
 
     QString committedRunId;
@@ -1624,10 +1834,10 @@ bool DemNode::validateAndRestoreOutput()
     QStringList missingTypes;
 
     for (int i = 0; i < expectedJpgPaths.size(); ++i) {
-        if (NodeUtils::isJpgPreviewCurrent(h5Paths[i], expectedJpgPaths[i])) {
+        if (NodeUtils::isJpgPreviewCurrent(expectedH5sForJpg[i], expectedJpgPaths[i])) {
             existingJpgPaths.append(expectedJpgPaths[i]);
         } else {
-            missingH5s.append(h5Paths[i]);
+            missingH5s.append(expectedH5sForJpg[i]);
             missingJpgs.append(expectedJpgPaths[i]);
             missingTypes.append(types[i]);
         }
@@ -1655,7 +1865,7 @@ bool DemNode::validateAndRestoreOutput()
         }
 
         connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
-                [this, h5Paths, expectedJpgPaths, missingJpgs, previewJpgPaths, previewGenerationId]() {
+                [this, expectedH5sForJpg, expectedJpgPaths, missingJpgs, previewJpgPaths, previewGenerationId]() {
             if (!m_previewGenerationPending || previewGenerationId != m_previewGenerationId) {
                 for (const QString& previewJpgPath : previewJpgPaths) {
                     QFile::remove(previewJpgPath);
@@ -1669,8 +1879,8 @@ bool DemNode::validateAndRestoreOutput()
                 }
             }
             QStringList validJpgPaths;
-            for (int i = 0; i < h5Paths.size() && i < expectedJpgPaths.size(); ++i) {
-                if (NodeUtils::isJpgPreviewCurrent(h5Paths[i], expectedJpgPaths[i])) {
+            for (int i = 0; i < expectedH5sForJpg.size() && i < expectedJpgPaths.size(); ++i) {
+                if (NodeUtils::isJpgPreviewCurrent(expectedH5sForJpg[i], expectedJpgPaths[i])) {
                     validJpgPaths.append(expectedJpgPaths[i]);
                 }
             }
@@ -1705,6 +1915,37 @@ bool DemNode::validateAndRestoreOutput()
 QStringList DemNode::previewImagePaths() const
 {
     QStringList list;
+    // 1. 优先使用内存中已持有的 ImageInfoData（节点执行完成或异步补全后已持有有效预览列表）
+    if (m_imageInfoData) {
+        for (const QString& path : m_imageInfoData->filePaths()) {
+            if (QFile::exists(path) && !list.contains(path)) {
+                list.append(path);
+            }
+        }
+        if (!list.isEmpty()) {
+            return list;
+        }
+    }
+
+    // 2. 其次通过 m_outputData 中的 H5 文件推导伴生预览图
+    if (m_outputData && !m_outputData->h5Paths().isEmpty()) {
+        for (const QString& h5Path : m_outputData->h5Paths()) {
+            const QFileInfo info(h5Path);
+            const QString jpgPath = info.absolutePath() + "/" + info.baseName() + ".jpg";
+            if (QFile::exists(jpgPath) && !list.contains(jpgPath)) {
+                list.append(jpgPath);
+            }
+            const QString kBiasJpgPath = info.absolutePath() + "/" + info.baseName() + "_k_bias.jpg";
+            if (QFile::exists(kBiasJpgPath) && !list.contains(kBiasJpgPath)) {
+                list.append(kBiasJpgPath);
+            }
+        }
+        if (!list.isEmpty()) {
+            return list;
+        }
+    }
+
+    // 3. 最后回退从磁盘工程已提交清单读取
     QString dstNode = m_outputNodeName.trimmed();
     if (dstNode.isEmpty())
         return list;
@@ -1714,8 +1955,12 @@ QStringList DemNode::previewImagePaths() const
         for (const QString& h5Path : h5Paths) {
             const QFileInfo info(h5Path);
             QString jpgPath = info.absolutePath() + "/" + info.baseName() + ".jpg";
-            if (QFile::exists(jpgPath)) {
+            if (QFile::exists(jpgPath) && !list.contains(jpgPath)) {
                 list.append(jpgPath);
+            }
+            QString kBiasJpgPath = info.absolutePath() + "/" + info.baseName() + "_k_bias.jpg";
+            if (QFile::exists(kBiasJpgPath) && !list.contains(kBiasJpgPath)) {
+                list.append(kBiasJpgPath);
             }
         }
     }
@@ -1793,10 +2038,7 @@ void DemNode::stopExecution()
         return;
     }
 
-    m_outputNodeNameEdit->setEnabled(true);
-    m_methodCombo->setEnabled(true);
-    if (m_timesEdit) m_timesEdit->setEnabled(true);
-    onMethodChanged(m_method - 1);
+    updateParameterWidgetsEnableState(true);
     setState(ExecutionState::Stopped);
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();
@@ -1804,17 +2046,37 @@ void DemNode::stopExecution()
 
 void DemNode::processAutomatically()
 {
+    if (m_workerThread || m_thread) {
+        deferAutomaticCompletion();
+        return;
+    }
+
     if (prepareToStart())
     {
         executeProcessing();
     }
     else
     {
-        // Keep preparation failures visible instead of disguising them as a
-        // missing-upstream-input Pending state. The full phase contract is
-        // checked by DemWorker after execution has started.
-        if (executionState() == ExecutionState::Running) {
+        QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels;
+        bool isPlannedLabel = false;
+        if (!m_auxiliaryDemLabel.isEmpty() && NodeUtils::loadAuxiliaryDemLabels(projectPath(), labels)) {
+            const auto labelBinding = labels.value(NodeUtils::normalizedDemLabel(m_auxiliaryDemLabel));
+            if (labelBinding.isPlanned()) {
+                isPlannedLabel = true;
+            }
+        }
+        const bool waitingForUpstreamPhase =
+            !m_inputData && hasActiveInputConnection(0);
+        const bool waitingForDemProducer =
+            !m_auxiliaryDemData && hasActiveInputConnection(1);
+        if (isPlannedLabel || waitingForUpstreamPhase || waitingForDemProducer) {
+            setStartFailureMessage(QString());
             setState(ExecutionState::Pending);
+        } else {
+            setLastErrorMessage(_startFailureMessage.isEmpty()
+                ? QStringLiteral("自动执行前置条件无效。")
+                : _startFailureMessage);
+            setState(ExecutionState::Error);
         }
     }
 }
@@ -1937,14 +2199,22 @@ private:
     {
         const quint64 currentEpoch = ++m_validationEpoch;
         m_isTimedOut = false;
-        if (m_node->executionState() != ExecutionState::Completed) {
+        if (m_node->executionState() != ExecutionState::Completed &&
+            m_node->executionState() != ExecutionState::Warning) {
             setNotExecutedState();
             return;
         }
 
         const auto inputData = m_node->inputDataForValidation();
-        const auto outputData = std::dynamic_pointer_cast<InsarDemData>(m_node->outData(0));
-        if (!outputData || outputData->h5Paths().isEmpty()) {
+        auto outputData = std::dynamic_pointer_cast<InsarDemData>(m_node->outData(0));
+        if (!outputData) {
+            outputData = m_node->outputDataForValidation();
+        }
+        QStringList outputPaths = outputData ? outputData->h5Paths() : QStringList();
+        if (outputPaths.isEmpty()) {
+            NodeUtils::loadCommittedOutputManifest(m_node->projectPath(), m_node->outputNodeName(), outputPaths);
+        }
+        if (outputPaths.isEmpty()) {
             m_statusTitle->setText(QObject::tr("诊断失败"));
             m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
             m_statusDesc->setText(QObject::tr("未找到完整的输出 DEM H5 文件列表。"));
@@ -1961,7 +2231,6 @@ private:
 
         const QJsonObject settings = m_node->save();
         const QStringList inputPaths = inputData ? inputData->filePaths() : QStringList();
-        const QStringList outputPaths = outputData->h5Paths();
         const int expectedMethod = settings.value("method").toInt(1);
         const int expectedIterations = settings.value("times").toInt(24);
 
@@ -2237,11 +2506,17 @@ private:
                 m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
                 m_statusDesc->setText(QObject::tr("当前反演参数与输出 H5 中记录的参数不一致；修改参数后需要重新执行节点。"));
             } else {
-                m_statusTitle->setText(QObject::tr("诊断完成"));
-                m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
-                m_statusDesc->setText((!result.hasRecordedMethod || !result.hasRecordedIterations)
-                    ? QObject::tr("输出完整且数值可读。旧结果未记录反演参数，无法确认其与当前设置是否一致。")
-                    : QObject::tr("输出完整、尺寸匹配且高程数值可读。有限值比例仅用于数值完整性诊断，不代表地理覆盖率，也不构成绝对高程精度评估。"));
+                if (m_node->executionState() == ExecutionState::Warning && !m_node->lastWarningMessage().isEmpty()) {
+                    m_statusTitle->setText(QObject::tr("诊断完成（存在质量告警）"));
+                    m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
+                    m_statusDesc->setText(QObject::tr("DEM 输出完整且高程数值可读，但绝对相位锚定检测到质量告警：%1").arg(m_node->lastWarningMessage()));
+                } else {
+                    m_statusTitle->setText(QObject::tr("诊断完成"));
+                    m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
+                    m_statusDesc->setText((!result.hasRecordedMethod || !result.hasRecordedIterations)
+                        ? QObject::tr("输出完整且数值可读。旧结果未记录反演参数，无法确认其与当前设置是否一致。")
+                        : QObject::tr("输出完整、尺寸匹配且高程数值可读。有限值比例仅用于数值完整性诊断，不代表地理覆盖率，也不构成绝对高程精度评估。"));
+                }
             }
             watcher->deleteLater();
         });
@@ -2262,6 +2537,82 @@ private:
 ::QWidget* DemNode::createValidationWidget(::QWidget* parent)
 {
     return new DemGenerationValidationWidget(this, parent);
+}
+
+QVector<ParameterInfo> DemNode::getParameters() const
+{
+    QVector<ParameterInfo> params;
+
+    ParameterInfo pMethod;
+    pMethod.name = QStringLiteral("反演方法");
+    pMethod.value = demGenerationMethodName(m_method);
+    pMethod.dataType = QStringLiteral("string");
+    pMethod.editType = FieldEditType::None;
+    params.append(pMethod);
+
+    ParameterInfo pTimes;
+    pTimes.name = QStringLiteral("迭代次数");
+    pTimes.value = QString::number(m_times);
+    pTimes.dataType = QStringLiteral("int");
+    pTimes.editType = FieldEditType::None;
+    params.append(pTimes);
+
+    ParameterInfo pDst;
+    pDst.name = QStringLiteral("目标节点");
+    pDst.value = m_outputNodeName.trimmed().isEmpty() ? QStringLiteral("未指定") : m_outputNodeName.trimmed();
+    pDst.dataType = QStringLiteral("string");
+    pDst.editType = FieldEditType::None;
+    params.append(pDst);
+
+    ParameterInfo pDem;
+    pDem.name = QStringLiteral("外部参考 DEM");
+    if (m_auxiliaryDemData) {
+        pDem.value = QStringLiteral("端口直连 (%1)").arg(m_auxiliaryDemData->nodeName());
+    } else if (!m_auxiliaryDemLabel.isEmpty()) {
+        pDem.value = QStringLiteral("工程标签 @%1").arg(m_auxiliaryDemLabel);
+    } else {
+        pDem.value = QStringLiteral("未配置");
+    }
+    pDem.dataType = QStringLiteral("string");
+    pDem.editType = FieldEditType::None;
+    params.append(pDem);
+
+    return params;
+}
+
+std::vector<QString> DemNode::processingInfo() const
+{
+    std::vector<QString> info;
+    info.push_back(QStringLiteral("目标节点：%1").arg(m_outputNodeName.trimmed().isEmpty() ? QStringLiteral("未指定") : m_outputNodeName.trimmed()));
+    info.push_back(QStringLiteral("反演算法：%1").arg(demGenerationMethodName(m_method)));
+    info.push_back(QStringLiteral("最大迭代次数：%1").arg(m_times));
+
+    if (m_auxiliaryDemData) {
+        info.push_back(QStringLiteral("外部参考 DEM：端口直连 (%1)").arg(m_auxiliaryDemData->nodeName()));
+    } else if (!m_auxiliaryDemLabel.isEmpty()) {
+        info.push_back(QStringLiteral("外部参考 DEM：工程标签 @%1").arg(m_auxiliaryDemLabel));
+    } else {
+        info.push_back(QStringLiteral("外部参考 DEM：未绑定"));
+    }
+
+    info.push_back(QStringLiteral("绝对相位锚定：策略版本 v2 (EGM96 水准面模型 + 椭球高转换)"));
+
+    if (executionState() == ExecutionState::Completed) {
+        info.push_back(QStringLiteral("执行状态：反演成功完成"));
+    } else if (executionState() == ExecutionState::Warning) {
+        info.push_back(QStringLiteral("执行状态：反演完成（存在质量告警）"));
+        if (!lastWarningMessage().isEmpty()) {
+            info.push_back(QStringLiteral("告警详情：%1").arg(lastWarningMessage()));
+        }
+    } else if (executionState() == ExecutionState::Running) {
+        info.push_back(QStringLiteral("执行状态：正在进行 DEM 反演计算..."));
+    } else if (executionState() == ExecutionState::Error) {
+        info.push_back(QStringLiteral("执行状态：执行失败 - %1").arg(lastErrorMessage()));
+    } else {
+        info.push_back(QStringLiteral("执行状态：就绪 / 等待执行"));
+    }
+
+    return info;
 }
 
 } // namespace QtNodes

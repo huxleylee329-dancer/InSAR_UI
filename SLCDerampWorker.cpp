@@ -178,15 +178,23 @@ void SLCDerampWorker::SLC_deramp(
         return;
     }
     progress.setStage(10, 45);
+    const double scenePx = static_cast<double>(sceneHeight) * sceneWidth;
+    const double demPx = (dem.total() > 0) ? static_cast<double>(dem.total()) : 1.0;
+    const int interpTimes = std::max(10, std::min(40,
+        static_cast<int>(std::ceil(std::sqrt(scenePx / demPx) * 1.4))));
+    InSARLogManager::LogInfo("SLCDerampWorker", QStringLiteral("SLC deramp demMapping interp_times resolved: %1 (scenePx=%2, demPx=%3, factor=%4)")
+        .arg(interpTimes).arg(static_cast<qulonglong>(scenePx)).arg(static_cast<qulonglong>(demPx))
+        .arg(std::sqrt(scenePx / demPx) * 1.4, 0, 'f', 2));
     const int mappingResult = flat.demMapping(dem, mappedDem, mappedLat, mappedLon, lonUpperLeft, latUpperLeft,
                                               offsetRow, offsetCol, sceneHeight, sceneWidth, prf, rangeSpacing,
-                                              wavelength, nearRangeTime, start, end, statevec, 20, 5.0 / 6000.0,
+                                              wavelength, nearRangeTime, start, end, statevec, interpTimes, 5.0 / 6000.0,
                                               5.0 / 6000.0, 0, 0, progress.callback());
     if (mappingResult == -2) {
         emit cancelled();
         return;
     }
-    if (mappingResult < 0) {
+    if (mappingResult < 0 || mappedDem.empty() || mappedLat.empty() || mappedLon.empty() ||
+        mappedDem.type() != CV_16S || mappedLat.type() != CV_64F || mappedLon.type() != CV_64F) {
         if (cancel()) return;
         fail(QStringLiteral("DEM mapping failed."));
         return;
