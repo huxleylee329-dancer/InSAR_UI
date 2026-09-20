@@ -10,8 +10,36 @@
 #include <QJsonArray>
 #include <QFileInfo>
 #include <QDir>
+#include <QXmlStreamReader>
 
 namespace QtNodes {
+
+namespace {
+
+// 从 TSX 主产品 XML 中取出 COSAR 文件名，拼成 IMAGEDATA/<name> 的绝对路径。
+// 该栅格是 TSX2h5 唯一消费的源影像；约定与详情页校验控件一致
+//（见 TSXBatchImportValidationWidget.cpp 对 filename 里 .cos 后缀的解析与 isFile 判定），
+// 但那份校验只挂在详情页上，不经过导入执行流程。
+// 返回空字符串表示 XML 中找不到 COSAR 文件名。
+QString resolveTsxCosarPath(const QString& xmlPath)
+{
+    QFile xml(xmlPath);
+    if (!xml.open(QIODevice::ReadOnly | QIODevice::Text)) return QString();
+
+    QXmlStreamReader reader(&xml);
+    while (!reader.atEnd()) {
+        if (reader.readNext() != QXmlStreamReader::StartElement) continue;
+        if (reader.name().toString() != QStringLiteral("filename")) continue;
+        const QString value = reader.readElementText().trimmed();
+        if (value.endsWith(QStringLiteral(".cos"), Qt::CaseInsensitive)) {
+            return QDir(QFileInfo(xmlPath).absolutePath())
+                .absoluteFilePath(QStringLiteral("IMAGEDATA/") + value);
+        }
+    }
+    return QString();
+}
+
+}   // namespace
 
 TSXBatchImportNode::TSXBatchImportNode()
     : ImportNodeBase()
@@ -160,6 +188,21 @@ void TSXBatchImportNode::executeImport()
         }
     }
 
+    // 补上 COSAR 源影像的存在性预检。XML 存在不等于可导入：TSX2h5 真正读的是
+    // IMAGEDATA/<cosarFilename>，缺失时每景要先在 DLL 里跑完分钟级的转换才失败，
+    // 并触发整批回滚。这里的判据是解析一次 XML + 一次 isFile()，毫秒级。
+    for (const QString& xmlPath : m_xmlPaths)
+    {
+        const QString cosarPath = resolveTsxCosarPath(xmlPath);
+        if (cosarPath.isEmpty() || !QFileInfo(cosarPath).isFile())
+        {
+            onError(cosarPath.isEmpty()
+                ? QStringLiteral("源 XML 中未找到 COSAR 文件名，无法确定待导入的源影像：") + xmlPath
+                : QStringLiteral("COSAR 源影像不存在：") + cosarPath);
+            return;
+        }
+    }
+
     std::vector<QString> originalFileList;
     std::vector<QString> importNameList;
 
@@ -184,7 +227,8 @@ void TSXBatchImportNode::executeImport()
         pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".jpg");
     }
 
-    // 因为已经在 prepareToStart() 中完成了存在性检查，这里直接读取 m_preparedOverwriteResult 并分支处理
+    // 上面已在本方法内完成 XML 与 COSAR 源影像的存在性检查（prepareToStart 只负责覆盖冲突），
+    // 这里直接读取 m_preparedOverwriteResult 并分支处理
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Cancel) {
         setState(ExecutionState::Idle);
         return;

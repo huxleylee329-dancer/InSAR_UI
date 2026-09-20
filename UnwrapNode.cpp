@@ -17,6 +17,7 @@
 #include <QRegularExpression>
 #include <QDir>
 #include <QApplication>
+#include <QDoubleValidator>
 #include <QDateTime>
 #include <QHash>
 #include <QRect>
@@ -271,8 +272,16 @@ void UnwrapNode::createWidget()
     m_coherenceLabel = new QLabel("相干系数阈值");
     m_coherenceEdit = new QLineEdit();
     m_coherenceEdit->setText(QString::number(m_coherenceThreshold));
+    // 相干系数的值域是 [0, 1]（由该量的定义决定，不是经验取值）。原先是裸 QLineEdit：
+    // toDouble() 失败会静默返回 0，用户会把「阈值 0 = 不过滤」当作正常设置，看不出输入非法。
+    m_coherenceEdit->setValidator(new QDoubleValidator(0.0, 1.0, 6, m_coherenceEdit));
     connect(m_coherenceEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
-        double val = m_coherenceEdit->text().toDouble();
+        bool ok = false;
+        const double val = m_coherenceEdit->text().toDouble(&ok);
+        if (!ok || val < 0.0 || val > 1.0) {
+            m_coherenceEdit->setText(QString::number(m_coherenceThreshold));
+            return;
+        }
         if (qAbs(m_coherenceThreshold - val) > 1e-6) {
             if (!confirmParameterChange()) {
                 m_coherenceEdit->setText(QString::number(m_coherenceThreshold));

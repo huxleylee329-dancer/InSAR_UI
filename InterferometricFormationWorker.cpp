@@ -925,6 +925,38 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
         return;
     }
     
+    // 预检：多视后的输出行数是 sourceRowMap 与多视因子的纯整数函数，与 DLL 内部判据同源
+    //（Utils.cpp 的 multilookCorrectedInterferogram 就是在这张表上数连续 run 再按整数除法累加）。
+    // 但 DLL 把这条判据放在平地相位、地形相位、多视与复相干全部算完之后，失败时 UI 只转述成
+    // 「复干涉量参考校正或多视处理失败」，用户无从知道是多视因子过大。
+    // 这里用同一个算法、同一张表提前算一遍：既省掉整像对的白跑，也把可行动的提示还给用户。
+    if (multilook_rg < 1 || multilook_az < 1) {
+        emit errorProcess(QStringLiteral("多视因子非法：距离向 %1、方位向 %2，必须为正整数。")
+            .arg(multilook_rg).arg(multilook_az));
+        return;
+    }
+    if (sourceRowMap.type() == CV_32S && sourceRowMap.rows == Master.GetRows() && sourceRowMap.cols == 1) {
+        const int expectedOutputCols = Master.GetCols() / multilook_rg;
+        int expectedOutputRows = 0;
+        for (int runFirst = 0; runFirst < sourceRowMap.rows;) {
+            int runEnd = runFirst + 1;
+            while (runEnd < sourceRowMap.rows &&
+                   sourceRowMap.at<int>(runEnd, 0) == sourceRowMap.at<int>(runEnd - 1, 0) + 1) {
+                ++runEnd;
+            }
+            const int runLength = runEnd - runFirst;
+            if (runLength >= multilook_az) expectedOutputRows += runLength / multilook_az;
+            runFirst = runEnd;
+        }
+        if (expectedOutputRows < 1 || expectedOutputCols < 1) {
+            emit errorProcess(QStringLiteral(
+                "多视因子过大：按当前多视（距离向 %1、方位向 %2）计算，输出网格为 %3 行 x %4 列，"
+                "至少需要 1 行 1 列。请减小多视因子后重试。")
+                .arg(multilook_rg).arg(multilook_az).arg(expectedOutputRows).arg(expectedOutputCols));
+            return;
+        }
+    }
+
     int total_pairs = input_paths.size() - 1;
     if (total_pairs <= 0) total_pairs = 1;
     int pair = 1;

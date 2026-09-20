@@ -1340,6 +1340,25 @@ void OrbitSourceWorker::fetch_and_apply_orbits(QString projectPath,
         }
         logSentinel1ProductIdentity(QStringLiteral("before POD application"), filePaths.at(i), identity);
         inputIdentities.insert(filePaths.at(i), identity);
+
+        // 时标契约同样只依赖头信息（两次 readStringFromH5 + 两次 utc2gps，毫秒级），
+        // 原先要到下面复制循环的 :1390 才校验，于是第 k 景时标非法时前 k-1 景的
+        // GB 级 QFile::copy 与 read_POD 全部作废（失败走事务回滚删掉整个 staging）。
+        // 这里并入同一轮预扫：先把全部输入的时标验完，再开始复制。
+        {
+            QString preflightStartText;
+            QString preflightStopText;
+            double preflightStartGps = 0.0;
+            double preflightStopGps = 0.0;
+            QString preflightTimeError;
+            if (!readAcquisitionTimeRange(filePaths.at(i), preflightStartText, preflightStopText,
+                                          preflightStartGps, preflightStopGps, preflightTimeError)) {
+                InSARLogManager::LogError("OrbitSourceWorker", preflightTimeError);
+                emit errorProcess(QStringLiteral("影像 %1 时标预检失败：%2")
+                                      .arg(QFileInfo(filePaths.at(i)).fileName()).arg(preflightTimeError));
+                return;
+            }
+        }
         QString eofPath;
         bool precise = false;
         QString itemError;

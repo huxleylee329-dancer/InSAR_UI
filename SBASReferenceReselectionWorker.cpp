@@ -115,6 +115,22 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString projectR
     const QString ifgSavePath = reconstructedInterferograms.path();
 
     int num_GCPs = GCPs.size();
+    // 越界写会直接破坏内存，这里用【重建后】的真实 mask 网格兜住（节点侧按输入 H5 的网格
+    // 预检过一次，两者不一致时以真实网格为准），失败走可读错误而不是崩溃。
+    // 注意下面的 at<int>(x, y)：GCP 的 x() 当行、y() 当列，此处沿用同一约定。
+    if (ref_row < 0 || ref_col < 0 || ref_row >= mask.rows || ref_col >= mask.cols) {
+        emit errorProcess(QStringLiteral("参考点（行 %1, 列 %2）超出重建后的 SBAS 时序网格 %3 x %4。")
+            .arg(ref_row).arg(ref_col).arg(mask.rows).arg(mask.cols));
+        return;
+    }
+    for (int i = 0; i < num_GCPs; ++i) {
+        if (GCPs[i].x() < 0 || GCPs[i].y() < 0 ||
+            GCPs[i].x() >= mask.rows || GCPs[i].y() >= mask.cols) {
+            emit errorProcess(QStringLiteral("控制点（行 %1, 列 %2）超出重建后的 SBAS 时序网格 %3 x %4。")
+                .arg(GCPs[i].x()).arg(GCPs[i].y()).arg(mask.rows).arg(mask.cols));
+            return;
+        }
+    }
     mask.copyTo(reflattening_mask); reflattening_mask = 0;
     for (int i = 0; i < num_GCPs; i++)
     {

@@ -7,6 +7,7 @@
 #include <QStandardItemModel>
 #include "include/icon_source.h"
 #include <QApplication>
+#include <QElapsedTimer>
 #include <QThread>
 #include <QFile>
 #include <QFileInfo>
@@ -22,6 +23,8 @@
 #include <QUuid>
 #include <QCryptographicHash>
 #include <QtDebug>
+#include <QSettings>
+#include <QStorageInfo>
 #ifdef Q_OS_WIN
 #include <windows.h>
 #endif
@@ -2608,7 +2611,38 @@ Hdf5Locker::Hdf5Locker()
     : m_mutex(&g_hdf5GlobalMutex)
     , m_isLocked(false)
 {
-    m_mutex->lock();
+    // 无参构造取的是进程级 HDF5 全局锁。HDF5 C 库不是线程安全的，而外部 DLL 的入口会自己
+    // 读写 H5（请求结构里带的是路径），所以这把锁必须跨越整个计算 —— 于是并行分支上的其它
+    // 节点可能长时间等锁（例如 DEM 解算为小时级，见 DemWorker）。
+    //
+    // 原实现是 QMutex::lock() 死等：既无任何提示、也无法被停止请求打断，表现为
+    // 「并行分支上的节点静默卡住数小时、点停止无效」。这里改为分段 tryLock + 周期上报，
+    // 把「卡住」变成「看得见的等待」。
+    //
+    // ⚠ 刻意【不】在收到停止请求时放行：全工程 106 个无参调用点中有 103 个不检查
+    //   isLocked()（唯一 3 处检查的是别的用法），无锁进入 HDF5 会造成库级数据竞争，
+    //   比多等一会儿严重得多。因此停止请求在这里只体现为一次明确告知，而不是中断等待。
+    //   （递归 mutex 下同一线程内嵌套仍立即成功，嵌套语义不变。）
+    constexpr int kWaitSliceMs = 200;
+    constexpr qint64 kReportIntervalMs = 5000;
+    QElapsedTimer waitTimer;
+    waitTimer.start();
+    qint64 nextReportMs = kReportIntervalMs;
+    bool stopNoticeLogged = false;
+    while (!m_mutex->tryLock(kWaitSliceMs)) {
+        const qint64 waitedMs = waitTimer.elapsed();
+        if (waitedMs >= nextReportMs) {
+            nextReportMs = waitedMs + kReportIntervalMs;
+            InSARLogManager::LogInfo("NodeUtils", QStringLiteral(
+                "正在等待其它节点释放 HDF5 全局锁，已等待 %1 秒……").arg(waitedMs / 1000));
+        }
+        if (!stopNoticeLogged && QThread::currentThread()->isInterruptionRequested()) {
+            stopNoticeLogged = true;
+            InSARLogManager::LogInfo("NodeUtils", QStringLiteral(
+                "已收到停止请求，但必须等 HDF5 锁释放后才能安全退出，请稍候；"
+                "正在占用该锁的节点完成当前步骤后即会释放。"));
+        }
+    }
     m_isLocked = true;
 }
 
@@ -7551,6 +7585,78 @@ bool validateDemValidityMaskForScene(const QString& demTifPath,
         return false;
     }
     return true;
+}
+
+quint64 physicalMemoryBytes()
+{
+#ifdef Q_OS_WIN
+    MEMORYSTATUSEX status;
+    status.dwLength = sizeof(status);
+    if (GlobalMemoryStatusEx(&status) != FALSE) return static_cast<quint64>(status.ullTotalPhys);
+#endif
+    return 0;
+}
+
+qint64 availableDiskBytes(const QString& directory)
+{
+    const QStorageInfo storage(directory);
+    if (!storage.isValid()) return -1;
+    const qint64 available = static_cast<qint64>(storage.bytesAvailable());
+    return available < 0 ? -1 : available;
+}
+
+bool ensureSufficientDiskSpace(const QString& directory, qint64 requiredBytes, QString* errorMessage)
+{
+    const QStorageInfo storage(directory);
+    // 探测不到卷信息就放行 —— 宁可漏报，也不因工具失败误拒合法任务
+    if (!storage.isValid()) return true;
+    const qint64 available = static_cast<qint64>(storage.bytesAvailable());
+    if (available < 0) return true;
+
+    QSettings settings(getConfigPath(), QSettings::IniFormat);
+    bool ok = false;
+    qint64 marginBytes = 0;
+    const qulonglong configuredBytes = settings.value(
+        QStringLiteral("Storage/MinFreeBytes"), 0).toULongLong(&ok);
+    if (ok && configuredBytes > 0) {
+        marginBytes = static_cast<qint64>(configuredBytes);
+    } else {
+        int percent = settings.value(QStringLiteral("Storage/MinFreePercent"), 5).toInt(&ok);
+        if (!ok || percent < 0 || percent > 50) percent = 5;
+        marginBytes = static_cast<qint64>(storage.bytesTotal()) / 100LL * static_cast<qint64>(percent);
+    }
+
+    const qint64 needed = (requiredBytes > 0 ? requiredBytes : 0) + marginBytes;
+    if (available >= needed) return true;
+
+    if (errorMessage) {
+        *errorMessage = QStringLiteral(
+            "目标磁盘可用空间不足：需要约 %1 GB（含 %2 GB 安全余量），当前可用 %3 GB（目录：%4）。")
+            .arg(double(needed) / 1073741824.0, 0, 'f', 2)
+            .arg(double(marginBytes) / 1073741824.0, 0, 'f', 2)
+            .arg(double(available) / 1073741824.0, 0, 'f', 2)
+            .arg(directory);
+    }
+    return false;
+}
+
+quint64 workingSetBudgetBytes(quint64 fallbackBytes)
+{
+    QSettings settings(getConfigPath(), QSettings::IniFormat);
+
+    // 显式字节数优先
+    bool ok = false;
+    const qulonglong configuredBytes = settings.value(
+        QStringLiteral("Memory/WorkingSetBudgetBytes"), 0).toULongLong(&ok);
+    if (ok && configuredBytes > 0) return static_cast<quint64>(configuredBytes);
+
+    // 否则按物理内存的百分比；取值非法时回落到 60%
+    int percent = settings.value(QStringLiteral("Memory/WorkingSetBudgetPercent"), 60).toInt(&ok);
+    if (!ok || percent < 1 || percent > 95) percent = 60;
+
+    const quint64 physicalBytes = physicalMemoryBytes();
+    if (physicalBytes == 0) return fallbackBytes;
+    return physicalBytes / 100ULL * static_cast<quint64>(percent);
 }
 
 } // namespace NodeUtils

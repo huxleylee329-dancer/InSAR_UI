@@ -46,6 +46,20 @@ void BaseImportWorker::import_patch(
         return;
     }
 
+    // 预检（磁盘）：本批的转换与预览都要落盘。这里【刻意不做落盘量估算】——
+    // task.arguments 里可能只有 XML（例如 TSX 真正被消费的栅格是 IMAGEDATA/*.cos，另有其文件），
+    // 按它求和会严重低估。所以只做「安全余量」检查：可用空间须高于该卷容量的 5%
+    //（Config.ini 的 [Storage] MinFreePercent / MinFreeBytes 可覆盖）。
+    // 它挡的是「盘快满了还开跑」：那种情况下会在第 k 景失败并整批回滚，
+    // 前 k-1 景已经完成的分钟级转换全部作废。宁可开跑前就拒绝。
+    {
+        QString diskError;
+        if (!NodeUtils::ensureSufficientDiskSpace(savepath, 0, &diskError)) {
+            emit errorProcess(diskError);
+            return;
+        }
+    }
+
     const int imageCount = static_cast<int>(tasks.size());
     QStringList outputNames;
     QStringList outputPaths;

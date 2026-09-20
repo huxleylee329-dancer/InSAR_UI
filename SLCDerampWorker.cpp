@@ -8,6 +8,8 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QThread>
+#include <QCryptographicHash>
+#include <QSettings>
 #include <string>
 #include <vector>
 #include <array>
@@ -61,6 +63,126 @@ public:
     DeflatProgressCallback callback() const { return m_slot < 0 ? nullptr : g_progressCallbacks[m_slot]; }
 private: std::shared_ptr<ProgressContext> m_context; int m_slot = -1;
 };
+
+// ---------------------------------------------------------------------------
+// demMapping 结果缓存（<工程>/.slc_deramp_cache/<master>__<digest>.h5）
+//
+// demMapping 是全网格 DEM 映射 + 轨道插值，与 Geocoding 那步同源（小时级量级）；
+// 它的产物只依赖 (master 几何, DEM, 网格, 偏移, interpTimes)，与被去斜坡的影像内容无关。
+// 原实现既不落盘也没有读回路径，改一个无关参数重试就要重付一次。
+// 键只用轻量元数据（路径 + 大小 + 修改时间），不做大文件全盘哈希。
+//
+// ⚠ 改动了 demMapping 的数值行为（几何约定、方位时刻口径等）必须提升版本号，
+//   否则摘要不变、旧缓存会被误命中并静默给出过期坐标。
+// 目录刻意与 Geocoding 的 .dem_mapping_cache 分开：那边的收敛逻辑按 <master>__*.h5
+// 清理同一 master 的旧文件，放在同一目录会互相误删。
+// ---------------------------------------------------------------------------
+const int kSlcDerampDemMappingCacheVersion = 1;
+
+QString slcDerampDemMappingDigest(const QString& masterH5, const QString& demPath,
+                                  int sceneHeight, int sceneWidth, int offsetRow, int offsetCol,
+                                  int interpTimes)
+{
+    QStringList parts;
+    const auto appendFileIdentity = [&parts](const QString& tag, const QString& path) {
+        const QFileInfo info(path);
+        parts << QStringLiteral("%1|%2|%3|%4").arg(tag, QDir::toNativeSeparators(info.absoluteFilePath()))
+            .arg(info.size()).arg(info.lastModified().toMSecsSinceEpoch());
+    };
+    appendFileIdentity(QStringLiteral("master"), masterH5);
+    appendFileIdentity(QStringLiteral("dem"), demPath);
+    parts << QStringLiteral("algo|%1").arg(kSlcDerampDemMappingCacheVersion);
+    parts << QStringLiteral("scene|%1|%2|%3|%4|%5")
+        .arg(sceneHeight).arg(sceneWidth).arg(offsetRow).arg(offsetCol).arg(interpTimes);
+    return QString::fromLatin1(QCryptographicHash::hash(parts.join(QLatin1Char(';')).toUtf8(),
+                                                        QCryptographicHash::Sha1).toHex().left(16));
+}
+
+// 文件名带 master 名前缀，便于写入前把同一 master 的旧缓存收敛掉
+QString slcDerampDemMappingCacheFilePath(const QString& projectRoot, const QString& masterH5, const QString& digest)
+{
+    const QString masterName = QFileInfo(masterH5).completeBaseName();
+    const QDir cacheDir(QDir(projectRoot).absoluteFilePath(QStringLiteral(".slc_deramp_cache")));
+    return cacheDir.absoluteFilePath(QStringLiteral("%1__%2.h5").arg(masterName, digest));
+}
+
+// 与 Geocoding 共用同一个开关：两者都是「demMapping 结果要不要持久化」
+bool slcDerampDemMappingCacheEnabled()
+{
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
+    return settings.value(QStringLiteral("Geocoding/DemMappingCacheEnabled"), true).toBool();
+}
+
+bool loadSlcDerampDemMappingCache(const QString& cacheFile, const QString& expectedDigest,
+                                  cv::Mat& mappedDem, cv::Mat& mappedLat, cv::Mat& mappedLon)
+{
+    if (!QFileInfo::exists(cacheFile)) return false;
+
+    QString error;
+    std::string storedDigest;
+    if (!NodeUtils::readStringFromH5(cacheFile, QStringLiteral("cache_digest"), storedDigest, &error) ||
+        QString::fromStdString(storedDigest) != expectedDigest) {
+        return false;
+    }
+    // complete 在全部数据集写完之后才落盘，用于识别上一次写盘中断留下的残file
+    int complete = 0;
+    if (!NodeUtils::readScalarFromH5(cacheFile, QStringLiteral("complete"), complete, &error) || complete != 1) {
+        return false;
+    }
+
+    cv::Mat cachedDem, cachedLat, cachedLon;
+    if (!NodeUtils::readMatFromH5(cacheFile, QStringLiteral("mapped_dem"), cachedDem, -1, &error) ||
+        !NodeUtils::readMatFromH5(cacheFile, QStringLiteral("mapped_lat"), cachedLat, -1, &error) ||
+        !NodeUtils::readMatFromH5(cacheFile, QStringLiteral("mapped_lon"), cachedLon, -1, &error)) {
+        return false;
+    }
+    if (cachedDem.type() != CV_16S || cachedLat.type() != CV_64F || cachedLon.type() != CV_64F) return false;
+    if (cachedDem.rows < 1 || cachedDem.cols < 1 ||
+        cachedDem.rows != cachedLat.rows || cachedDem.rows != cachedLon.rows ||
+        cachedDem.cols != cachedLat.cols || cachedDem.cols != cachedLon.cols) {
+        return false;
+    }
+    mappedDem = cachedDem;
+    mappedLat = cachedLat;
+    mappedLon = cachedLon;
+    return true;
+}
+
+void storeSlcDerampDemMappingCache(const QString& cacheFile, const QString& digest,
+                                   const cv::Mat& mappedDem, const cv::Mat& mappedLat, const cv::Mat& mappedLon)
+{
+    const QDir cacheDir = QFileInfo(cacheFile).absoluteDir();
+    if (!cacheDir.exists() && !QDir().mkpath(cacheDir.absolutePath())) return;
+
+    // 同一 master 只保留一份
+    const QString prefix = QFileInfo(cacheFile).completeBaseName().section(QStringLiteral("__"), 0, 0)
+        + QStringLiteral("__");
+    const QFileInfoList stale = cacheDir.entryInfoList(QStringList() << (prefix + QStringLiteral("*.h5")), QDir::Files);
+    for (const QFileInfo& info : stale) {
+        if (info.absoluteFilePath() != cacheFile) QFile::remove(info.absoluteFilePath());
+    }
+
+    // 上一次可能写到一半就中断，先删干净再重建，避免 creat_new_h5 面对残file
+    QFile::remove(cacheFile);
+    FormatConversion conversion;
+    if (conversion.creat_new_h5(cacheFile.toStdString().c_str()) < 0) {
+        InSARLogManager::LogInfo("SLCDerampWorker", QString("demMapping 缓存写入失败：无法创建 %1").arg(cacheFile));
+        return;
+    }
+
+    QString error;
+    const bool written = NodeUtils::writeMatToH5(cacheFile, QStringLiteral("mapped_dem"), mappedDem, &error) &&
+                         NodeUtils::writeMatToH5(cacheFile, QStringLiteral("mapped_lat"), mappedLat, &error) &&
+                         NodeUtils::writeMatToH5(cacheFile, QStringLiteral("mapped_lon"), mappedLon, &error) &&
+                         NodeUtils::writeStringToH5(cacheFile, QStringLiteral("cache_digest"), digest.toStdString(), &error) &&
+                         NodeUtils::writeScalarToH5(cacheFile, QStringLiteral("complete"), 1, &error);
+    if (!written) {
+        InSARLogManager::LogInfo("SLCDerampWorker", QString("demMapping 缓存写入失败：%1").arg(error));
+        QFile::remove(cacheFile);
+        return;
+    }
+    InSARLogManager::LogInfo("SLCDerampWorker", QString("demMapping 缓存已写入：%1").arg(cacheFile));
+}
 }
 
 SLCDerampWorker::SLCDerampWorker(QObject* parent)
@@ -161,6 +283,20 @@ void SLCDerampWorker::SLC_deramp(
             return;
         }
     }
+    // 预检：跨输入尺寸一致性只依赖各文件的两个标量（range_len / azimuth_len），毫秒级；
+    // 而下面的 demMapping 是全网格 DEM 映射 + 轨道插值（与 Geocoding 那步同源，小时级）。
+    // 所以必须在 demMapping 之前判死：混接不同 sub-swath / 不同多视的 SLC 时，
+    // 原先要跑满一次 demMapping 才在逐景循环里报「尺寸不匹配」。
+    for (const QString& inputPath : inputPaths) {
+        int inputWidth = 0, inputHeight = 0;
+        if (!NodeUtils::readScalarFromH5(inputPath, "range_len", inputWidth) ||
+            !NodeUtils::readScalarFromH5(inputPath, "azimuth_len", inputHeight) ||
+            inputWidth != sceneWidth || inputHeight != sceneHeight) {
+            fail(QStringLiteral("Input SLC dimensions do not match the master scene: %1").arg(inputPath));
+            return;
+        }
+    }
+
     wavelength = VEL_C / wavelength;
     nearRangeTime = 2.0 * nearRangeTime / VEL_C;
     if (conversion.utc2gps(startTime.c_str(), &start) != 0 || conversion.utc2gps(endTime.c_str(), &end) != 0) {
@@ -185,10 +321,24 @@ void SLCDerampWorker::SLC_deramp(
     InSARLogManager::LogInfo("SLCDerampWorker", QStringLiteral("SLC deramp demMapping interp_times resolved: %1 (scenePx=%2, demPx=%3, factor=%4)")
         .arg(interpTimes).arg(static_cast<qulonglong>(scenePx)).arg(static_cast<qulonglong>(demPx))
         .arg(std::sqrt(scenePx / demPx) * 1.4, 0, 'f', 2));
-    const int mappingResult = flat.demMapping(dem, mappedDem, mappedLat, mappedLon, lonUpperLeft, latUpperLeft,
-                                              offsetRow, offsetCol, sceneHeight, sceneWidth, prf, rangeSpacing,
-                                              wavelength, nearRangeTime, start, end, statevec, interpTimes, 5.0 / 6000.0,
-                                              5.0 / 6000.0, 0, 0, progress.callback());
+    // demMapping 结果缓存：命中则整段跳过。产物只依赖几何/DEM/网格，与影像内容无关，
+    // 所以失败重跑或改无关参数重试不必重付一次全网格映射。
+    const QString derampCacheDigest = slcDerampDemMappingDigest(masterPath, demPath, sceneHeight, sceneWidth,
+                                                               offsetRow, offsetCol, interpTimes);
+    const QString derampCacheFile = slcDerampDemMappingCacheFilePath(savePath, masterPath, derampCacheDigest);
+    int mappingResult = 0;
+    if (slcDerampDemMappingCacheEnabled() &&
+        loadSlcDerampDemMappingCache(derampCacheFile, derampCacheDigest, mappedDem, mappedLat, mappedLon)) {
+        InSARLogManager::LogInfo("SLCDerampWorker", QString("demMapping 缓存命中：%1").arg(derampCacheFile));
+    } else {
+        mappingResult = flat.demMapping(dem, mappedDem, mappedLat, mappedLon, lonUpperLeft, latUpperLeft,
+                                        offsetRow, offsetCol, sceneHeight, sceneWidth, prf, rangeSpacing,
+                                        wavelength, nearRangeTime, start, end, statevec, interpTimes, 5.0 / 6000.0,
+                                        5.0 / 6000.0, 0, 0, progress.callback());
+        if (mappingResult == 0 && !mappedDem.empty() && !mappedLat.empty() && !mappedLon.empty()) {
+            storeSlcDerampDemMappingCache(derampCacheFile, derampCacheDigest, mappedDem, mappedLat, mappedLon);
+        }
+    }
     if (mappingResult == -2) {
         emit cancelled();
         return;
@@ -212,15 +362,6 @@ void SLCDerampWorker::SLC_deramp(
 
     QStringList resultH5Paths;
     ComplexMat slc;
-    for (const QString& inputPath : inputPaths) {
-        int inputWidth = 0, inputHeight = 0;
-        if (!NodeUtils::readScalarFromH5(inputPath, "range_len", inputWidth) ||
-            !NodeUtils::readScalarFromH5(inputPath, "azimuth_len", inputHeight) ||
-            inputWidth != sceneWidth || inputHeight != sceneHeight) {
-            fail(QStringLiteral("Input SLC dimensions do not match the master scene: %1").arg(inputPath));
-            return;
-        }
-    }
     for (int i = 0; i < inputPaths.size(); ++i) {
         if (cancel()) return;
         progress.setStage(45 + 50 * i / inputPaths.size(), 45 + 50 * (i + 1) / inputPaths.size());

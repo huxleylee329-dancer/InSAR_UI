@@ -244,7 +244,10 @@ public:
     // UI 读取时建议指定合理的超时（如 50ms）以防界面卡死
     Hdf5Locker(const QString& filePath, int timeoutMs = -1);
     Hdf5Locker(const std::string& filePath, int timeoutMs = -1);
-    Hdf5Locker(); // 兼容原先无参数调用，使用全局静态大锁并死等
+    // 无参调用：取进程级 HDF5 全局锁。分段等待并周期上报等待时长，
+    // 但不会因停止请求放行 —— 106 个无参调用点里有 103 个不检查 isLocked()，
+    // 无锁访问 HDF5 会造成库级数据竞争，比多等一会儿严重得多。
+    Hdf5Locker();
     ~Hdf5Locker();
 
     bool isLocked() const { return m_isLocked; }
@@ -782,5 +785,40 @@ bool validateDemValidityMaskForScene(const QString& demTifPath,
                                      qint64* totalPixelCount = nullptr,
                                      qint64* validPixelCount = nullptr,
                                      QString* errorMessage = nullptr);
+
+// 物理内存字节数；取不到时返回 0。
+quint64 physicalMemoryBytes();
+
+/**
+ * @brief 工作集内存预算（字节）
+ *
+ * 约定（默认百分比 + 可配置覆盖）：
+ *   [Memory] WorkingSetBudgetPercent = 60    （1~95，非法值忽略并回落到 60）
+ *   [Memory] WorkingSetBudgetBytes   = <字节> （>0 时优先于百分比）
+ * 物理内存取不到时返回 fallbackBytes。
+ *
+ * 用途：在昂贵步骤之前判断这一步的工作集是否装得下，超预算即提前失败。
+ * 注意：节点自身可裁定的护栏（如 DEM 解算的工作集）用本函数；
+ *       DLL 内部的护栏（如 MCF 求解器工作集）必须与 DLL 保持一致，不以本函数取值。
+ */
+quint64 workingSetBudgetBytes(quint64 fallbackBytes);
+
+// 目录所在卷的可用字节数；取不到时返回 -1。
+qint64 availableDiskBytes(const QString& directory);
+
+/**
+ * @brief 落盘前的磁盘空间预检
+ *
+ * 要求：可用空间 >= requiredBytes + 安全余量。
+ * 安全余量默认取该卷容量的 5%，可用 Config.ini 覆盖：
+ *   [Storage] MinFreePercent = 5       （0~50，非法值忽略并回落到 5）
+ *   [Storage] MinFreeBytes   = <字节>  （>0 时优先于百分比）
+ * 取不到卷信息时返回 true —— 宁可漏报，也不因探测失败误拒合法任务。
+ *
+ * requiredBytes 传 0 表示只做「安全余量」检查：适用于**无法廉价估算落盘量**的场景
+ *（例如各卫星导入：task.arguments 里可能只有 XML，真正的栅格另有其文件）。
+ * 能算准的地方（如逐景复制、DEM 落盘）应传入真实估算值。
+ */
+bool ensureSufficientDiskSpace(const QString& directory, qint64 requiredBytes, QString* errorMessage = nullptr);
 
 } // namespace NodeUtils

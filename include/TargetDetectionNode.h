@@ -95,8 +95,17 @@ private:
         QString fileName;
         QString resultText;
         QString probability;
+        // 模型输出的原始概率（0~1），与阈值无关：阈值在 DLL 里只参与
+        // `shipProb >= threshold ? "Ship" : "Sea"` 这一句比较（SARProcessing.cpp:161），
+        // 不参与特征提取、也不进任何落盘产物。持久化它，才能在改阈值时就地重贴标签
+        // 而不重跑整批特征提取。负值表示「未知」（例如从只存了文本概率的旧工程加载）。
+        float shipProbability = -1.0f;
     };
     QList<DetectionResult> m_savedResults;
+
+    // 用当前 m_thresholdValue 就地重贴 Ship/Sea 标签。
+    // 只有当每条已保存结果都持有原始概率时才可行；否则返回 false，交调用方走原有的重跑路径。
+    bool relabelSavedResults();
 
     // Threading
     TargetDetectionTask* m_task = nullptr;

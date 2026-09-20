@@ -472,7 +472,9 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
     if (ret < 0)
     {
 		InSARLogManager::LogError("CoregistrationWorker", QString("Task failed in: ") + QString(__FUNCTION__));
-		Q_EMIT errorProcess(QStringLiteral("配准计算失败。"));
+		Q_EMIT errorProcess(ret == -3
+			? QStringLiteral("输入的 SLC 影像尺寸不一致，无法配准。请确认所有输入属于同一景、同一子带与同一多视设置。")
+			: QStringLiteral("配准计算失败。"));
 		return;
 	}
 	/*获取主星参数*/
@@ -1066,6 +1068,20 @@ int CoregistrationWorker::Registration_copy(
 	//分块读取数据并求取偏移量
 	Utils util; Registration regis;
 	int rows = images_rows.at<int>(Master_index - 1, 0); int cols = images_cols.at<int>(Master_index - 1, 0);
+	// 预检：跨影像尺寸一致性。各景的 (range_len, azimuth_len) 刚读进 images_rows/cols，
+	// 这是一次 O(n) 整数比对，而下面每一对影像都要做全图相干匹配、全图重采样与全量写盘。
+	// 更要紧的是：后续会用辅影像网格去裁主影像块，而 ComplexMat::operator() 越界只 fprintf
+	// 后返回空矩阵、不抛异常，尺寸不一致会静默降级成残差被污染的「成功」配准。
+	// 返回 -3 与其它失败区分，供调用方给出可行动的原因。
+	for (int i = 0; i < n_images; ++i)
+	{
+		if (images_rows.at<int>(i, 0) != rows || images_cols.at<int>(i, 0) != cols)
+		{
+			fprintf(stderr, "stack_coregistration(): image %d size (%d, %d) differs from master (%d, %d)!\n",
+				i + 1, images_rows.at<int>(i, 0), images_cols.at<int>(i, 0), rows, cols);
+			return -3;
+		}
+	}
 	int m = rows / blocksize;
 	int n = cols / blocksize;
 	if (m * n < 10)

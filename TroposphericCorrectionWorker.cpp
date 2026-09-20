@@ -206,15 +206,21 @@ void TroposphericCorrectionWorker::doCorrection(
         QString master_nc = findNcFileForDate(masterDate);
         QString slave_nc = findNcFileForDate(slaveDate);
 
-        if (master_nc.isEmpty() && !ncFiles.isEmpty()) {
-            master_nc = era5_dir.absoluteFilePath(ncFiles.first());
-            InSARLogManager::LogWarning("TroposphericCorrectionWorker", 
-                QString("未找到主影像日期 %1 的 ERA5 文件，使用第一个文件：%2").arg(masterDate).arg(ncFiles.first()));
+        // 日期匹配失败原先会静默退化成「用目录里第一个 .nc」，只记一条 Warning 就继续 ——
+        // 这不会让节点失败，却会产出一幅大气场用错日期、外观完全正常的结果，下游无从察觉。
+        // 因此改为硬失败。注意 ncFiles 非空已在校正开始前确认过（见本函数开头的 ERA5 目录扫描），
+        // 所以原先走到这里就一定是"日期没匹配上"，本次改动不影响任何原本正确的路径。
+        if (master_nc.isEmpty()) {
+            fail(QStringLiteral("第%1幅：ERA5 目录中没有匹配主影像日期 %2 的 .nc 文件"
+                                "（目录 %3，共 %4 个文件）。请确认 ERA5 数据覆盖该日期后重试。")
+                .arg(idx + 1).arg(masterDate).arg(era5Dir).arg(ncFiles.size()));
+            return;
         }
-        if (slave_nc.isEmpty() && !ncFiles.isEmpty()) {
-            slave_nc = era5_dir.absoluteFilePath(ncFiles.first());
-            InSARLogManager::LogWarning("TroposphericCorrectionWorker", 
-                QString("未找到从影像日期 %1 的 ERA5 文件，使用第一个文件：%2").arg(slaveDate).arg(ncFiles.first()));
+        if (slave_nc.isEmpty()) {
+            fail(QStringLiteral("第%1幅：ERA5 目录中没有匹配从影像日期 %2 的 .nc 文件"
+                                "（目录 %3，共 %4 个文件）。请确认 ERA5 数据覆盖该日期后重试。")
+                .arg(idx + 1).arg(slaveDate).arg(era5Dir).arg(ncFiles.size()));
+            return;
         }
 
         // 获取雷达波长 (米)
