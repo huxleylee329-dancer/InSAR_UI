@@ -8,6 +8,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QStorageInfo>
 #include <QThread>
 #include <vector>
 #include <string>
@@ -212,9 +213,49 @@ void OrbitRefinementWorker::refine_orbit(
 
     emit updateProcess(70, QStringLiteral("正在生成输出影像并回写轨道参数……"));
 
-    // 复制所有 H5 图像至输出路径并覆写主影像的轨道参数
+    // 预检：本段的成本几乎全在 QFile::copy 上（每景 GB 级、纯字节复制、无 reflink），
+    // 失败的现实原因就是目标盘写满。Σ 源文件大小 vs 可用空间是一次 O(1) 元数据读取
+    //（只读 fileSize，不读文件内容，符合项目的大文件禁哈希规范），
+    // 可以在做任何复制之前判死，而不是拷到第 k 景才 ENOSPC 后整批回滚。
+    {
+        qint64 requiredBytes = 0;
+        for (const QString& srcPath : filePaths) {
+            const QFileInfo info(srcPath);
+            if (info.isFile()) requiredBytes += info.size();
+        }
+        const QStorageInfo storage(projectDir);
+        if (storage.isValid() && requiredBytes > 0 && storage.bytesAvailable() < requiredBytes) {
+            emit errorProcess(QStringLiteral("目标磁盘可用空间不足：复制 %1 幅影像需要约 %2 GB，"
+                                             "当前可用 %3 GB（目录：%4）。")
+                .arg(filePaths.size())
+                .arg(double(requiredBytes) / 1073741824.0, 0, 'f', 2)
+                .arg(double(storage.bytesAvailable()) / 1073741824.0, 0, 'f', 2)
+                .arg(projectDir));
+            return;
+        }
+    }
+
+    // 复制所有 H5 图像至输出路径并覆写主影像的轨道参数。
+    // 处理顺序上主影像优先：它的复制 + 轨道回写是全流程唯一会写 payload 且可能硬失败的一步，
+    // 而复制本身是主要成本（每景 GB 级 QFile::copy，纯字节复制，无 reflink）。原先回写夹在
+    // 循环内、只有 i == masterIndex-1 时才触发 —— 主影像若排在靠后，前面若干份复制会一起作废
+    //（失败即走事务回滚删掉整个 staging）。
+    // 注意 outputFilePaths 按下标落位（不再是 append），所以处理顺序变了、输出列表顺序仍与
+    // 输入完全一致 —— 这一点必须保证：下面的 originNames 是按 filePaths 顺序建的，两者按下标配对。
     QStringList outputFilePaths;
+    outputFilePaths.reserve(filePaths.size());
+    // Qt5 的 QList 没有 resize()，按输入顺序先占位，后面再按下标落位
+    for (int i = 0; i < filePaths.size(); i++) outputFilePaths.append(QString());
+
+    QList<int> copyOrder;
+    copyOrder.reserve(filePaths.size());
+    if (masterIndex >= 1 && masterIndex <= filePaths.size()) copyOrder.append(masterIndex - 1);
     for (int i = 0; i < filePaths.size(); i++) {
+        if (i != masterIndex - 1) copyOrder.append(i);
+    }
+
+    for (int orderIndex = 0; orderIndex < copyOrder.size(); orderIndex++) {
+        const int i = copyOrder.at(orderIndex);
         if (isStopRequested() || QThread::currentThread()->isInterruptionRequested()) {
             emit cancelled();
             return;
@@ -235,7 +276,7 @@ void OrbitRefinementWorker::refine_orbit(
             return;
         }
 
-        outputFilePaths.append(dstPath);
+        outputFilePaths[i] = dstPath;
 
         // 如果是主影像，则需要将精炼后的 state_vec, lon_coefficient, lat_coefficient 写回该 H5
         if (i == masterIndex - 1) {

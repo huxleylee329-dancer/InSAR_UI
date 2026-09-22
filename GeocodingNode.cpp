@@ -817,6 +817,12 @@ void GeocodingNode::onProcessingFinished()
 
     m_outputNodeName = dstNode;
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    // 端口 0 的契约（geocoding.output.geocoded_raster）要求 NodeData 携带产品描述符。
+    // 描述符在 executeProcessing() 里已经注册进输出事务，这里取回来挂上即可；
+    // 不挂的话 setOutputData 会回退成框架合成的最小描述符并打 WARNING，下游就拿不到
+    // 几何与空间元数据。工程恢复路径（validateAndRestoreOutput）本来就是这么做的。
+    m_outputData->setProductDescriptor(
+        ProductDescriptor::fromJson(m_outputTransaction.productDescriptor));
     setOutputData(0, m_outputData);
 
     // Generate JPG previews asynchronously (SOP Rule 7)

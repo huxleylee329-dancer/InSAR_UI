@@ -309,7 +309,9 @@ struct McfDimensionPreflight
     QString failure;
 };
 
-constexpr quint64 kMcfWorkingSetBudgetBytes = 8ULL * 1024ULL * 1024ULL * 1024ULL;
+// MCF 求解器的工作集预算由 DLL 导出（Unwrap::McfWorkingSetBudgetBytes），两侧不得各写一份：
+// 若 UI 按别的值预检、而 DLL 按它自己的值拒绝，两边的判决就会不一致。
+const quint64 kMcfWorkingSetBudgetBytes = static_cast<quint64>(Unwrap::McfWorkingSetBudgetBytes());
 
 bool checkedMcfAdd(quint64 left, quint64 right, quint64& output)
 {
@@ -809,6 +811,50 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         }
     };
 
+    // 解缠完成后 copyH5Metadata 才会复制这批元数据，缺失时整幅作废；但它们全是头信息级读取，
+    // 所以在任何解缠开始之前先把整批验一遍（只做读侧校验，不创建也不写任何文件）。
+    // 覆盖 copyH5Metadata 中所有可提前判定的条件：source_1 可解析、source_2 可读、
+    // 四个必需矩阵存在、主影像含 offset_row/offset_col（readOffset 要求 CV_32SC1 单元素）。
+    const auto preflightUnwrapInputMetadata = [&](int idx, QString& error) -> bool {
+        NodeUtils::Hdf5Locker locker;
+        const QString phaseH5 = phase_path.at(idx);
+        std::string source1;
+        if (!NodeUtils::readStringFromH5(phaseH5, "source_1", source1)) {
+            error = QStringLiteral("无法读取 source_1");
+            return false;
+        }
+        PathResolver::Resolution masterResolution;
+        PathResolver::Error pathError = PathResolver::Error::None;
+        const QByteArray projectRootUtf8 = save_path.toUtf8();
+        if (!PathResolver::resolve(source1, projectRootUtf8.toStdString(), masterResolution, &pathError)) {
+            error = QStringLiteral("无法解析 source_1: %1")
+                        .arg(QString::fromLatin1(PathResolver::errorMessage(pathError)));
+            return false;
+        }
+        const QString masterPath = QString::fromUtf8(masterResolution.utf8.data(),
+                                                     static_cast<int>(masterResolution.utf8.size()));
+        std::string source2;
+        if (!NodeUtils::readStringFromH5(phaseH5, "source_2", source2)) {
+            error = QStringLiteral("无法读取 source_2");
+            return false;
+        }
+        cv::Mat metadata;
+        const char* const requiredDatasets[] = { "range_len", "azimuth_len", "multilook_rg", "multilook_az" };
+        for (const char* dataset : requiredDatasets) {
+            QString matrixError;
+            if (!NodeUtils::readMatFromH5(phaseH5, QString::fromLatin1(dataset), metadata, -1, &matrixError) ||
+                metadata.empty()) {
+                error = QStringLiteral("无法读取必需元数据 %1: %2")
+                            .arg(QString::fromLatin1(dataset),
+                                 matrixError.isEmpty() ? QStringLiteral("empty dataset") : matrixError);
+                return false;
+            }
+        }
+        int preflightOffsetRow = 0, preflightOffsetCol = 0;
+        return readOffset(masterPath, "offset_row", preflightOffsetRow, error) &&
+               readOffset(masterPath, "offset_col", preflightOffsetCol, error);
+    };
+
     for (int i = 0; i < image_number; ++i) {
         QString phaseValidityError;
         const bool supportsMaskedPhase = method == 1 || method == 3;
@@ -820,6 +866,12 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
 			emit errorProcess(phaseValidityError);
 			return;
 		}
+        QString metadataPrecheckError;
+        if (!preflightUnwrapInputMetadata(i, metadataPrecheckError)) {
+            emit errorProcess(QStringLiteral("第%1幅输入的元数据预检失败：%2")
+                                  .arg(i + 1).arg(metadataPrecheckError));
+            return;
+        }
     }
 
     if (method == 1)

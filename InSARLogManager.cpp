@@ -24,6 +24,29 @@ namespace {
 thread_local QList<TaskLogContext> g_taskContexts;
 thread_local bool g_qtMessageHandlerActive = false;
 
+// 控制台输出必须直接写 CONOUT$ 句柄，不能走 CRT 的 stderr。
+// 主程序会把 stderr 接到管道上，由读取线程转发 DLL 的 fprintf 输出；
+// writeEmergency 若仍写 stderr，其内容会被读取线程再次回灌日志，形成无限回环。
+// 句柄惰性获取并在首次失败后持续重试，以兼容 AllocConsole 晚于首次日志的情况。
+HANDLE consoleOutputHandle()
+{
+    static HANDLE handle = INVALID_HANDLE_VALUE;
+    if (handle == INVALID_HANDLE_VALUE) {
+        handle = CreateFileA("CONOUT$", GENERIC_WRITE, FILE_SHARE_WRITE | FILE_SHARE_READ,
+                             nullptr, OPEN_EXISTING, 0, nullptr);
+    }
+    return handle == INVALID_HANDLE_VALUE ? nullptr : handle;
+}
+
+void writeToConsole(const QByteArray& bytes)
+{
+    if (bytes.isEmpty()) return;
+    HANDLE handle = consoleOutputHandle();
+    if (!handle) return;
+    DWORD written = 0;
+    WriteFile(handle, bytes.constData(), static_cast<DWORD>(bytes.size()), &written, nullptr);
+}
+
 LogTargets userTarget()
 {
     return LogTargets(LogTarget::UserProjectLog);
@@ -81,7 +104,7 @@ void qtMessageHandler(QtMsgType type, const QMessageLogContext& context, const Q
 {
     if (g_qtMessageHandlerActive) {
         const QByteArray fallback = QStringLiteral("[Qt recursive message] %1\n").arg(message).toLocal8Bit();
-        std::fputs(fallback.constData(), stderr);
+        writeToConsole(fallback);
         OutputDebugStringW(reinterpret_cast<LPCWSTR>(QString::fromLocal8Bit(fallback).utf16()));
         return;
     }
@@ -519,7 +542,7 @@ void InSARLogManager::writeDroppedDiagnosticSummary(quint64 count)
 void InSARLogManager::writeEmergency(const QString& line) const
 {
     const QByteArray bytes = (line + QLatin1Char('\n')).toLocal8Bit();
-    std::fputs(bytes.constData(), stderr);
+    writeToConsole(bytes);
     OutputDebugStringW(reinterpret_cast<LPCWSTR>(QString::fromLocal8Bit(bytes).utf16()));
 }
 

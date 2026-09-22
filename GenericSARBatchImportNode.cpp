@@ -153,6 +153,23 @@ void GenericSARBatchImportNode::executeImport()
         }
     }
 
+    // 预检（磁盘）：本节点是逐文件 QFile::copy（源栅格 → 输出目录），落盘量就是源文件之和，
+    // 可以精确估算，不必像卫星导入那样用余量近似。而任务失败时会删除整个输出目录
+    //（GenericSARImportTask::run 里的 removeRecursively），所以盘满会让已完成的拷贝一起作废。
+    // 因此在派发任务之前判死。
+    {
+        qint64 requiredBytes = 0;
+        for (const QString& sourcePath : m_preparedOriginalFileList) {
+            const QFileInfo info(sourcePath);
+            if (info.isFile()) requiredBytes += info.size();
+        }
+        QString diskError;
+        if (!NodeUtils::ensureSufficientDiskSpace(projectPath(), requiredBytes, &diskError)) {
+            onError(diskError);
+            return;
+        }
+    }
+
     m_cancellationToken = std::make_shared<std::atomic_bool>(false);
     auto* task = new GenericSARBatchImportTask(
         projectPath(),

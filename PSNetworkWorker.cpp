@@ -127,6 +127,31 @@ void PSNetworkWorker::build_network(
     int edge_count = static_cast<int>(edges.size());
     InSARLogManager::LogInfo("PSNetworkWorker", QString("Network built. PS count: %1, Edge count: %2").arg(ps_count).arg(edge_count));
 
+    // 预检：PS 点坐标是 ps_mask 网格下的坐标，而下面要逐景用同一批坐标去索引各景的全分辨率
+    // SLC（slc_re.at<float>(r, c)，Release 下无边界检查）。所以先算一次坐标上界，再逐景核对尺寸：
+    // 这是一次 O(ps_count) + O(景数) 的整数比较，而下面的循环要为每一景读入整幅 SLC。
+    // 探测不到尺寸就整体跳过（不因元数据口径差异误拒），此时交由循环内的兜底判断拦住。
+    int maxPsRow = 0, maxPsCol = 0;
+    for (int i = 0; i < ps_count; ++i) {
+        if (ps_points[i].row > maxPsRow) maxPsRow = ps_points[i].row;
+        if (ps_points[i].col > maxPsCol) maxPsCol = ps_points[i].col;
+    }
+    for (int k = 0; k < slcFilePaths.size(); ++k) {
+        int slcRows = 0, slcCols = 0;
+        QString dimProbeError;
+        if (!NodeUtils::probeH5DatasetMetadata(slcFilePaths.at(k), QStringLiteral("s_re"),
+                                               &slcRows, &slcCols, &dimProbeError)) {
+            break;
+        }
+        if (slcRows <= maxPsRow || slcCols <= maxPsCol) {
+            emit errorProcess(QStringLiteral(
+                "第 %1 景的 SLC 尺寸 (%2 x %3) 小于 PS 点坐标范围（最大行 %4、最大列 %5），无法提取稀疏点数据。"
+                "请确认所有输入 SLC 与 PS 候选点来自同一景、同一子带与同一多视设置。")
+                .arg(k + 1).arg(slcRows).arg(slcCols).arg(maxPsRow).arg(maxPsCol));
+            return;
+        }
+    }
+
     // 3. 计算/获取参考点索引 (若未指定，则选择最接近图像中心的点)
     int ref_index = 0;
     int rows = ps_mask.rows;
@@ -172,6 +197,16 @@ void PSNetworkWorker::build_network(
         cv::Mat slc_im = slc.im;
         if (slc_re.type() != CV_32F) slc_re.convertTo(slc_re, CV_32F);
         if (slc_im.type() != CV_32F) slc_im.convertTo(slc_im, CV_32F);
+
+        // 兜底：上面的预检可能因元数据口径不同被跳过，这里用真实矩阵尺寸再挡一次越界读
+        //（at<float> 在 Release 下越界不报错，会静默取到错值并污染时空基线）。
+        if (slc_re.rows <= maxPsRow || slc_re.cols <= maxPsCol ||
+            slc_im.rows <= maxPsRow || slc_im.cols <= maxPsCol) {
+            emit errorProcess(QStringLiteral(
+                "第 %1 景的 SLC 尺寸 (%2 x %3) 小于 PS 点坐标范围（最大行 %4、最大列 %5）。")
+                .arg(k + 1).arg(slc_re.rows).arg(slc_re.cols).arg(maxPsRow).arg(maxPsCol));
+            return;
+        }
 
         #pragma omp parallel for schedule(static)
         for (int i = 0; i < ps_count; ++i) {

@@ -551,6 +551,41 @@ bool SBASReferenceReselectionNode::prepareToStart()
         return false;
     }
     m_preparedInputH5 = m_inputData->filePaths().first();
+
+    // 预检：参考点与控制点的坐标索引的是时序网格，与输入 H5 的 mask 同网格，
+    // 该网格只依赖已提交输入的 header，读一次 dataspace 即可判定（毫秒级）。
+    // 而下游 worker 会先按 provenance 重建整套干涉图（等价于重跑一次完整 SBAS），
+    // 重建之后才用 ref_row/ref_col 索引相位、用控制点索引 mask，越界时才会出问题。
+    // 因此在这里就判死：既免去白跑一次 SBAS，也免去越界读/写。
+    // 注意 worker 里 GCP 的 x() 被当作行、y() 被当作列（见 Worker.cpp 的 at<int>(x, y)），此处沿用同一约定。
+    {
+        int maskRows = 0, maskCols = 0;
+        QString maskProbeError;
+        if (NodeUtils::probeH5DatasetMetadata(m_preparedInputH5, QStringLiteral("mask"),
+                                              &maskRows, &maskCols, &maskProbeError) &&
+            maskRows > 0 && maskCols > 0) {
+            QString rangeError;
+            if (m_refRow >= maskRows || m_refCol >= maskCols) {
+                rangeError = QStringLiteral("参考点（行 %1, 列 %2）超出 SBAS 时序网格 %3 x %4，请重新选取。")
+                    .arg(m_refRow).arg(m_refCol).arg(maskRows).arg(maskCols);
+            } else {
+                for (const QPoint& gcp : m_GCPs) {
+                    if (gcp.x() < 0 || gcp.y() < 0 || gcp.x() >= maskRows || gcp.y() >= maskCols) {
+                        rangeError = QStringLiteral("控制点（行 %1, 列 %2）超出 SBAS 时序网格 %3 x %4，请重新选取。")
+                            .arg(gcp.x()).arg(gcp.y()).arg(maskRows).arg(maskCols);
+                        break;
+                    }
+                }
+            }
+            if (!rangeError.isEmpty()) {
+                if (m_resultLabel) m_resultLabel->setText(rangeError);
+                setStartFailureMessage(rangeError);
+                setLastErrorMessage(rangeError);
+                return false;
+            }
+        }
+    }
+
     QString provenanceError;
     if (!loadCurrentCommittedSbasInputs(m_preparedProjectRoot, m_preparedInputH5,
                                         m_preparedSourceInputs, m_preparedParameters, nullptr, &provenanceError)) {

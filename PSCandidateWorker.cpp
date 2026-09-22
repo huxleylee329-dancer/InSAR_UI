@@ -96,6 +96,30 @@ void PSCandidateWorker::select_candidates(
     int rows = 0;
     int cols = 0;
 
+    // 预检：跨景尺寸一致性。sum_amplitude/sum_amplitude_sq 按第 1 景的尺寸分配，之后每景
+    // 都用 `sum_amplitude += amp` 累加 —— 尺寸不同时 OpenCV 会抛 cv::Exception，而本函数体
+    // 没有 try/catch，异常会穿过 QThread::started 上的 lambda 逸出线程事件循环，
+    // 用户看到的是崩溃而不是一条能读的错误。尺寸只需各景的 header，读一次即可判定。
+    // 探测不到尺寸就整体跳过（不因元数据口径差异误拒），此时交由循环内的兜底判断拦住。
+    for (int i = 0; i < num_images; ++i) {
+        int probeRows = 0, probeCols = 0;
+        QString probeError;
+        if (!NodeUtils::probeH5DatasetMetadata(filePaths.at(i), QStringLiteral("s_re"),
+                                               &probeRows, &probeCols, &probeError)) {
+            break;
+        }
+        if (i == 0) {
+            rows = probeRows;
+            cols = probeCols;
+        } else if (probeRows != rows || probeCols != cols) {
+            emit errorProcess(QStringLiteral(
+                "第 %1 景的 SLC 尺寸 (%2 x %3) 与第 1 景 (%4 x %5) 不一致，无法累计振幅。"
+                "请确认所有输入属于同一景、同一子带与同一多视设置。")
+                .arg(i + 1).arg(probeRows).arg(probeCols).arg(rows).arg(cols));
+            return;
+        }
+    }
+
     for (int i = 0; i < num_images; ++i) {
         if (cancellationRequested()) {
             finishCancelled();
@@ -117,6 +141,13 @@ void PSCandidateWorker::select_candidates(
             cols = slc.GetCols();
             sum_amplitude = cv::Mat::zeros(rows, cols, CV_32FC1);
             sum_amplitude_sq = cv::Mat::zeros(rows, cols, CV_32FC1);
+        } else if (slc.GetRows() != rows || slc.GetCols() != cols) {
+            // 兜底：预检可能因元数据口径被跳过，这里用真实矩阵尺寸再挡一次，
+            // 把 cv::Exception 换成可读错误（越界/尺寸不符不进入 += 的异常路径）。
+            emit errorProcess(QStringLiteral(
+                "第 %1 景的 SLC 尺寸 (%2 x %3) 与第 1 景 (%4 x %5) 不一致，无法累计振幅。")
+                .arg(i + 1).arg(slc.GetRows()).arg(slc.GetCols()).arg(rows).arg(cols));
+            return;
         }
 
         cv::Mat amp;

@@ -16,6 +16,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QEventLoop>
+#include <QCryptographicHash>
 #include <QTimer>
 #include <QRegularExpression>
 #include <QTextStream>
@@ -65,6 +66,35 @@ static bool __stdcall gacosProgressCallback(int progress, const char* message)
     return true;
 }
 
+namespace {
+
+// GACOS 下载结果的缓存路径。
+//
+// 必须放在【事务之外】：本节点的暂存目录（save_path/file_name）在失败回滚时会被
+// abandonOutputTransaction 递归删除，放在那里等于没缓存。
+// 键由 (master日期, slave日期, 经纬度框, 格式) 决定 —— 这正是 GACOS 作业的输入，
+// 所以另一批影像只要日期与范围相同就能复用（语义上本就该复用同一份大气场）。
+QString gacosDownloadCachePath(const QString& savePath, const QString& masterDate, const QString& slaveDate,
+                               double latMin, double latMax, double lonMin, double lonMax, int dataFormat)
+{
+    QString cacheRoot = savePath;
+    if (cacheRoot.endsWith(QStringLiteral(".insar"), Qt::CaseInsensitive)) {
+        cacheRoot = QFileInfo(cacheRoot).absolutePath();
+    }
+    QStringList parts;
+    parts << QStringLiteral("v1") << masterDate << slaveDate
+          << QString::number(latMin, 'g', 10) << QString::number(latMax, 'g', 10)
+          << QString::number(lonMin, 'g', 10) << QString::number(lonMax, 'g', 10)
+          << QString::number(dataFormat);
+    const QString digest = QString::fromLatin1(QCryptographicHash::hash(
+        parts.join(QLatin1Char(';')).toUtf8(), QCryptographicHash::Sha1).toHex().left(16));
+    const QDir cacheDir(QDir(cacheRoot).absoluteFilePath(QStringLiteral(".gacos_cache")));
+    return cacheDir.absoluteFilePath(QStringLiteral("%1_%2_%3.%4")
+        .arg(masterDate, slaveDate, digest, dataFormat == 0 ? QStringLiteral("tif") : QStringLiteral("ztd")));
+}
+
+}   // namespace
+
 GacosOnlineServiceWorker::GacosOnlineServiceWorker(QObject* parent)
     : BaseWorker(parent)
 {
@@ -93,7 +123,6 @@ void GacosOnlineServiceWorker::doGacosRequest(
 
     // 创建输出目录
     QDir dir(save_path);
-    QString absolute_path = save_path + "/" + file_name;
     if (!dir.mkpath(file_name)) {
         emit errorProcess(QStringLiteral("Unable to create GACOS staging output directory."));
         currentWorker = nullptr;
@@ -131,6 +160,35 @@ void GacosOnlineServiceWorker::doGacosRequest(
 
     FormatConversion FC;
     int ret = 0;
+
+    // 预检：整批输入契约。原先是逐景读元数据，第 k 景缺数据集要等前 k-1 景各自跑完
+    //「提交 → 等服务器（最多 30 分钟）→ 下载 → 重采样」才暴露 —— 而作业一旦提交就无法撤回，
+    // 前 k-1 景的等待全部白费。这里在提交任何作业之前把整批验完：
+    // 三个数组数据集用 dataspace 探测（不读数据），两个字符串用现成的读取接口。
+    for (int idx = 0; idx < image_count; ++idx) {
+        const char* const requiredArrays[] = { "phase", "mapped_lat", "mapped_lon" };
+        for (const char* dataset : requiredArrays) {
+            int probeRows = 0, probeCols = 0;
+            QString probeError;
+            if (!NodeUtils::probeH5DatasetMetadata(phase_paths.at(idx), QString::fromLatin1(dataset),
+                                                   &probeRows, &probeCols, &probeError)) {
+                emit errorProcess(QStringLiteral("第 %1 幅缺少必需数据集 %2：%3")
+                                      .arg(idx + 1).arg(QString::fromLatin1(dataset)).arg(probeError));
+                currentWorker = nullptr;
+                return;
+            }
+        }
+        const char* const requiredStrings[] = { "source_1", "source_2" };
+        std::string probeString;
+        for (const char* dataset : requiredStrings) {
+            if (!NodeUtils::readStringFromH5(phase_paths.at(idx), QString::fromLatin1(dataset), probeString)) {
+                emit errorProcess(QStringLiteral("第 %1 幅缺少必需元数据 %2")
+                                      .arg(idx + 1).arg(QString::fromLatin1(dataset)));
+                currentWorker = nullptr;
+                return;
+            }
+        }
+    }
 
     // 创建网络管理器
     QNetworkAccessManager nam;
@@ -310,50 +368,60 @@ void GacosOnlineServiceWorker::doGacosRequest(
         }
 
         // === 阶段3: 下载并解析 ===
-        emit updateProcess(progress + 10, QStringLiteral("下载GACOS结果（第%1幅）……").arg(idx + 1));
+        // 下载结果缓存在事务之外的 <工程>/.gacos_cache/（键 = master/slave 日期 + 范围 + 格式）。
+        // 这样解析或写盘失败后重跑时，前面已下到的影像不必再提交一次云端作业、再等一次。
+        // 成功路径末尾会删除缓存副本（产物已落地）；只有失败的影像会留下它。
+        QString localDownloadPath = gacosDownloadCachePath(
+            save_path, QString::fromStdString(source_1_str).left(10), QString::fromStdString(source_2_str).left(10),
+            lat_min, lat_max, lon_min, lon_max, dataFormat);
 
-        QString localDownloadPath = absolute_path + "/gacos_download_" + QString::number(idx);
-        if (dataFormat == 0) localDownloadPath += ".tif";
-        else localDownloadPath += ".ztd";
+        if (QFileInfo(localDownloadPath).isFile() && QFileInfo(localDownloadPath).size() > 0) {
+            InSARLogManager::LogInfo("GacosOnlineServiceWorker", QStringLiteral(
+                "复用已下载的 GACOS 结果，跳过下载：%1").arg(localDownloadPath));
+        } else {
+            emit updateProcess(progress + 10, QStringLiteral("下载GACOS结果（第%1幅）……").arg(idx + 1));
 
-        QNetworkRequest downloadReq;
-        downloadReq.setUrl(QUrl(downloadUrl));
-        QNetworkReply* downloadReply = nam.get(downloadReq);
+            QDir().mkpath(QFileInfo(localDownloadPath).absolutePath());
 
-        const bool downloadFinished = waitForReply(downloadReply, 120000);
-        if (QThread::currentThread()->isInterruptionRequested()) {
+            QNetworkRequest downloadReq;
+            downloadReq.setUrl(QUrl(downloadUrl));
+            QNetworkReply* downloadReply = nam.get(downloadReq);
+
+            const bool downloadFinished = waitForReply(downloadReply, 120000);
+            if (QThread::currentThread()->isInterruptionRequested()) {
+                downloadReply->deleteLater();
+                emit cancelled();
+                currentWorker = nullptr;
+                return;
+            }
+            if (!downloadFinished) {
+                downloadReply->abort();
+                downloadReply->deleteLater();
+                emit errorProcess(QStringLiteral("GACOS下载请求超时。"));
+                currentWorker = nullptr;
+                return;
+            }
+
+            if (downloadReply->error() != QNetworkReply::NoError) {
+                const QString error = QString("GACOS下载失败: %1").arg(downloadReply->errorString());
+                downloadReply->deleteLater();
+                emit errorProcess(error);
+                currentWorker = nullptr;
+                return;
+            }
+
+            QFile dlFile(localDownloadPath);
+            const QByteArray downloadData = downloadReply->readAll();
+            if (!dlFile.open(QIODevice::WriteOnly) || dlFile.write(downloadData) != downloadData.size()) {
+                if (dlFile.isOpen()) dlFile.close();
+                downloadReply->deleteLater();
+                emit errorProcess(QStringLiteral("Unable to save downloaded GACOS response."));
+                currentWorker = nullptr;
+                return;
+            }
+            dlFile.close();
             downloadReply->deleteLater();
-            emit cancelled();
-            currentWorker = nullptr;
-            return;
         }
-        if (!downloadFinished) {
-            downloadReply->abort();
-            downloadReply->deleteLater();
-            emit errorProcess(QStringLiteral("GACOS下载请求超时。"));
-            currentWorker = nullptr;
-            return;
-        }
-
-        if (downloadReply->error() != QNetworkReply::NoError) {
-            const QString error = QString("GACOS下载失败: %1").arg(downloadReply->errorString());
-            downloadReply->deleteLater();
-            emit errorProcess(error);
-            currentWorker = nullptr;
-            return;
-        }
-
-        QFile dlFile(localDownloadPath);
-        const QByteArray downloadData = downloadReply->readAll();
-        if (!dlFile.open(QIODevice::WriteOnly) || dlFile.write(downloadData) != downloadData.size()) {
-            if (dlFile.isOpen()) dlFile.close();
-            downloadReply->deleteLater();
-            emit errorProcess(QStringLiteral("Unable to save downloaded GACOS response."));
-            currentWorker = nullptr;
-            return;
-        }
-        dlFile.close();
-        downloadReply->deleteLater();
 
         // 调用独立算法 DLL 解析下载文件并计算 GACOS 改正相位
         // 获取雷达波长 (米)
@@ -378,7 +446,8 @@ void GacosOnlineServiceWorker::doGacosRequest(
         );
 
         if (!ok) {
-            QFile::remove(localDownloadPath);
+            InSARLogManager::LogInfo("GacosOnlineServiceWorker", QStringLiteral(
+                "保留已下载的 GACOS 结果以便重跑复用（如需强制重新下载，请删除该文件）：%1").arg(localDownloadPath));
             emit errorProcess(QString("GACOS算法处理失败 (图%1): %2")
                 .arg(idx + 1).arg(QString::fromLocal8Bit(errBuf)));
             currentWorker = nullptr;
@@ -394,7 +463,8 @@ void GacosOnlineServiceWorker::doGacosRequest(
                 FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "phase", aps_phase) != 0 ||
                 FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "mapped_lat", lat_mat) != 0 ||
                 FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "mapped_lon", lon_mat) != 0) {
-                QFile::remove(localDownloadPath);
+                InSARLogManager::LogInfo("GacosOnlineServiceWorker", QStringLiteral(
+                    "保留已下载的 GACOS 结果以便重跑复用（如需强制重新下载，请删除该文件）：%1").arg(localDownloadPath));
                 emit errorProcess(QStringLiteral("Failed to write staged GACOS H5 output: %1").arg(absolute_output_paths[idx]));
                 currentWorker = nullptr;
                 return;
@@ -405,7 +475,8 @@ void GacosOnlineServiceWorker::doGacosRequest(
                                                 &sourcePathMetadataError) ||
             !NodeUtils::copySourcePathMetadata(phase_paths[idx], absolute_output_paths[idx],
                                                &sourcePathMetadataError)) {
-            QFile::remove(localDownloadPath);
+            InSARLogManager::LogInfo("GacosOnlineServiceWorker", QStringLiteral(
+                "保留已下载的 GACOS 结果以便重跑复用（如需强制重新下载，请删除该文件）：%1").arg(localDownloadPath));
             emit errorProcess(QStringLiteral("Failed to preserve source-path metadata: %1").arg(sourcePathMetadataError));
             currentWorker = nullptr;
             return;

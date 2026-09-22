@@ -239,7 +239,13 @@ void TargetDetectionNode::createWidget()
                 return;
             }
             m_thresholdValue = val;
-            invalidateNodeData();
+            // 阈值只决定 Ship/Sea 标签：DLL 里它就出现在
+            // `shipProb >= threshold ? "Ship" : "Sea"` 这一句（SARProcessing.cpp:161），
+            // 不参与特征提取、也不进任何落盘产物。因此已有检测结果、且各图都留有原始概率时，
+            // 只需就地重贴标签，不必重跑整批检测（100 图量级是数十分钟到小时）。
+            if (!relabelSavedResults()) {
+                invalidateNodeData();
+            }
         } else if (!ok) {
             m_thresholdEdit->setText(QString::number(m_thresholdValue, 'f', 2));
         }
@@ -519,7 +525,10 @@ void TargetDetectionNode::onDetectionFinished(int imageIndex, bool success, floa
         
         if (success) {
             m_resultsTable->setItem(row, 1, new QTableWidgetItem(resultText));
-            m_resultsTable->setItem(row, 2, new QTableWidgetItem(QString::number(shipProb * 100.0f, 'f', 2) + "%"));
+            // 把原始概率挂在 item 上，供 save() 持久化与改阈值时就地重贴标签使用
+            auto* probabilityItem = new QTableWidgetItem(QString::number(shipProb * 100.0f, 'f', 2) + "%");
+            probabilityItem->setData(Qt::UserRole, static_cast<double>(shipProb));
+            m_resultsTable->setItem(row, 2, probabilityItem);
         } else {
             m_resultsTable->setItem(row, 1, new QTableWidgetItem("Error"));
             m_resultsTable->setItem(row, 2, new QTableWidgetItem(errorMsg));
@@ -532,6 +541,7 @@ void TargetDetectionNode::onDetectionFinished(int imageIndex, bool success, floa
         if (success) {
             res.resultText = resultText;
             res.probability = QString::number(shipProb * 100.0f, 'f', 2) + "%";
+            res.shipProbability = shipProb;
         } else {
             res.resultText = "Error";
             res.probability = errorMsg;
@@ -613,6 +623,35 @@ void TargetDetectionNode::onCancelled()
     Q_EMIT computingFinished();
 }
 
+bool TargetDetectionNode::relabelSavedResults()
+{
+    if (m_savedResults.isEmpty()) return false;
+    // 任一项缺原始概率（例如从只存了文本概率的旧工程加载）就不能就地重贴标签，
+    // 交回调用方走原有的重跑路径 —— 宁可多跑一次，也不能贴出错的标签。
+    for (const DetectionResult& res : m_savedResults) {
+        if (res.shipProbability < 0.0f) return false;
+    }
+
+    // 判据与 DLL 保持一致：SARProcessing.cpp:161 的 `shipProb >= threshold ? "Ship" : "Sea"`
+    for (DetectionResult& res : m_savedResults) {
+        res.resultText = res.shipProbability >= m_thresholdValue
+            ? QStringLiteral("Ship") : QStringLiteral("Sea");
+    }
+
+    if (m_resultsTable) {
+        for (int row = 0; row < m_resultsTable->rowCount() && row < m_savedResults.size(); ++row) {
+            if (QTableWidgetItem* item = m_resultsTable->item(row, 1)) {
+                item->setText(m_savedResults.at(row).resultText);
+            }
+        }
+    }
+    // 单图时结果区直接展示标签；多图时由汇总行兜底，无需改动
+    if (m_savedResults.size() == 1 && m_resultLabel) {
+        m_resultLabel->setText(m_savedResults.first().resultText);
+    }
+    return true;
+}
+
 QJsonObject TargetDetectionNode::save() const
 {
     QJsonObject modelJson = ExecutableNodeDelegateModel::save();
@@ -627,6 +666,10 @@ QJsonObject TargetDetectionNode::save() const
             resultObj["fileName"] = m_resultsTable->item(row, 0) ? m_resultsTable->item(row, 0)->text() : "";
             resultObj["resultText"] = m_resultsTable->item(row, 1) ? m_resultsTable->item(row, 1)->text() : "";
             resultObj["probability"] = m_resultsTable->item(row, 2) ? m_resultsTable->item(row, 2)->text() : "";
+            if (QTableWidgetItem* probabilityItem = m_resultsTable->item(row, 2)) {
+                const QVariant rawProbability = probabilityItem->data(Qt::UserRole);
+                if (rawProbability.isValid()) resultObj["shipProb"] = rawProbability.toDouble();
+            }
             resultsArray.append(resultObj);
         }
     } else {
@@ -635,6 +678,7 @@ QJsonObject TargetDetectionNode::save() const
             resultObj["fileName"] = res.fileName;
             resultObj["resultText"] = res.resultText;
             resultObj["probability"] = res.probability;
+            if (res.shipProbability >= 0.0f) resultObj["shipProb"] = static_cast<double>(res.shipProbability);
             resultsArray.append(resultObj);
         }
     }
@@ -678,6 +722,9 @@ void TargetDetectionNode::load(QJsonObject const &json)
             res.fileName = resultObj["fileName"].toString();
             res.resultText = resultObj["resultText"].toString();
             res.probability = resultObj["probability"].toString();
+            if (resultObj.contains(QStringLiteral("shipProb"))) {
+                res.shipProbability = static_cast<float>(resultObj["shipProb"].toDouble(-1.0));
+            }
             m_savedResults.append(res);
         }
     } else if (json.contains("resultText")) {
@@ -685,6 +732,9 @@ void TargetDetectionNode::load(QJsonObject const &json)
         res.fileName = "Unknown";
         res.resultText = json["resultText"].toString("--");
         res.probability = QString::number(json["shipProb"].toDouble(0.0) * 100.0f, 'f', 2) + "%";
+        if (json.contains(QStringLiteral("shipProb"))) {
+            res.shipProbability = static_cast<float>(json["shipProb"].toDouble(-1.0));
+        }
         if (res.resultText != "--") {
             m_savedResults.append(res);
         }

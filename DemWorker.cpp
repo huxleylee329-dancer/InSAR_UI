@@ -12,6 +12,7 @@
 #include <QCryptographicHash>
 #include <QFile>
 #include <QFileInfo>
+#include <QStorageInfo>
 #include <QHash>
 #include <QJsonDocument>
 #include <QMutexLocker>
@@ -1105,13 +1106,74 @@ void DemWorker::Dem(DemAbsolutePhaseAnchorV2Request request)
             logSourceDependency(inputH5, QStringLiteral("source_1"), savePath);
             logSourceDependency(inputH5, QStringLiteral("source_2"), savePath);
 
+            // 预检（磁盘）：本幅的落盘量 =（a）事务快照拷贝的输入文件之和 +（b）求解结果
+            // dem(CV_64F) 与 k_bias(CV_32F) 两张全网格栅格。两者都能在这里用 O(1) 元数据估出来，
+            // 而失败原本要等到拷贝（下面 createCoreEntitySnapshots）或写盘时才暴露 ——
+            // 那时求解可能已经跑完，等于白付一次小时级解算。
+            // 只读 fileSize 与网格尺寸，不读文件内容（符合项目大文件禁哈希规范）。
+            // 说明：未计入 aux DEM / geoid / valid mask（它们在结构体里路径各异，量级也远小于
+            // phase/master/slave），故估算偏保守 —— 只可能漏报，不会误报。
+            {
+                const DemPhaseAnchorInputSnapshot& preflightSnapshot = request.phaseInputSnapshots.at(i);
+                qint64 requiredBytes = 0;
+                const auto addFileSize = [&requiredBytes](const QString& path) {
+                    const QFileInfo info(path);
+                    if (info.isFile() && info.size() > 0) requiredBytes += info.size();
+                };
+                addFileSize(preflightSnapshot.phase.absolutePath);
+                addFileSize(preflightSnapshot.master.absolutePath);
+                addFileSize(preflightSnapshot.slave.absolutePath);
+                addFileSize(preflightSnapshot.geometryReference.absolutePath);
+                const qint64 gridPixels = static_cast<qint64>(phase.rows) * static_cast<qint64>(phase.cols);
+                requiredBytes += gridPixels * 12;
+                const QStorageInfo storage(outputDirectory);
+                if (storage.isValid() && requiredBytes > 0 && storage.bytesAvailable() < requiredBytes) {
+                    emit errorProcess(QStringLiteral(
+                        "目标磁盘可用空间不足：本幅需要约 %1 GB（输入快照拷贝 + dem/k_bias 落盘），"
+                        "当前可用 %2 GB（目录：%3）。")
+                        .arg(double(requiredBytes) / 1073741824.0, 0, 'f', 2)
+                        .arg(double(storage.bytesAvailable()) / 1073741824.0, 0, 'f', 2)
+                        .arg(outputDirectory));
+                    return;
+                }
+            }
+
+            // 预检（内存）：DEM 解算是本节点最贵的一步，而它的工作集在读完输入之后就已经已知。
+            // 已知驻留按【实际读入的矩阵尺寸与元素大小】计算（不猜类型）：
+            //   phase + phase_valid_mask + flat_earth_reference_phase + 输出 dem(CV_64F)/k_bias(CV_32F)
+            // 再乘安全系数覆盖 DLL 内部工作集与其全网格临时副本 —— 这两者 DLL 未导出量纲，
+            // 所以这里给出的是偏保守的下界，只会漏报、不会误报。
+            {
+                const auto matBytes = [](const cv::Mat& m) -> qint64 {
+                    return m.empty() ? 0 : static_cast<qint64>(m.total()) * static_cast<qint64>(m.elemSize());
+                };
+                constexpr double kDemWorkingSetSafetyFactor = 2.0;
+                constexpr quint64 kDemWorkingSetFallbackBytes = 8ULL * 1024ULL * 1024ULL * 1024ULL;
+                const qint64 gridPixels = static_cast<qint64>(phase.rows) * static_cast<qint64>(phase.cols);
+                const qint64 residentBytes = matBytes(phase) + matBytes(phaseValidMask) + matBytes(flatPhaseMetadata)
+                    + gridPixels * 12;
+                const qint64 requiredBytes = static_cast<qint64>(
+                    static_cast<double>(residentBytes) * kDemWorkingSetSafetyFactor);
+                const quint64 budgetBytes = NodeUtils::workingSetBudgetBytes(kDemWorkingSetFallbackBytes);
+                if (budgetBytes > 0 && requiredBytes > static_cast<qint64>(budgetBytes)) {
+                    emit errorProcess(QStringLiteral(
+                        "内存预算不足：本幅网格 %1 x %2，预计工作集约 %3 GB，超出预算 %4 GB"
+                        "（预算默认取物理内存的 60%，可用 Config.ini 的 [Memory] WorkingSetBudgetPercent / "
+                        "WorkingSetBudgetBytes 调整）。请先做多视或裁剪后再试。")
+                        .arg(phase.rows).arg(phase.cols)
+                        .arg(double(requiredBytes) / 1073741824.0, 0, 'f', 2)
+                        .arg(double(budgetBytes) / 1073741824.0, 0, 'f', 2));
+                    return;
+                }
+            }
+
             if (!demAbsolutePhaseAnchorV2CoreApiAvailable()) {
                 emit errorProcess(QStringLiteral(
                     "DEM absolute-phase anchoring v2 Core ABI is unavailable; legacy single-GCP DEM generation is forbidden."));
                 return;
             }
 
-            Mat phaseDem;
+            Mat phaseDem, phaseKBias;
             DemAbsolutePhaseAnchorV2Request coreSnapshotRequest;
             DemPhaseAnchorInputSnapshot corePhaseSnapshot;
             const QString coreSnapshotDirectory = QDir(outputDirectory).absoluteFilePath(
@@ -1191,7 +1253,7 @@ void DemWorker::Dem(DemAbsolutePhaseAnchorV2Request request)
             diagnostics.progressUserData = &progressContext;
             InSARLogManager::LogDebug("DemWorker", QString("Calling DEM absolute-phase anchoring v2: callId=%1, phase=%2, iterations=%3, resourceId=%4")
                 .arg(QString::fromUtf8(callId), inputH5).arg(times).arg(request.auxiliaryDemSnapshot.binding.resourceId), "dem.dll.call.v2");
-            const int result = dem.dem_newton_iter_absolute_phase_anchor_v2(&coreRequest, phaseDem,
+            const int result = dem.dem_newton_iter_absolute_phase_anchor_v2(&coreRequest, phaseDem, phaseKBias,
                 &anchorResult, &diagnostics);
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
                 finishCancelled();
@@ -1242,13 +1304,14 @@ void DemWorker::Dem(DemAbsolutePhaseAnchorV2Request request)
                 emit errorProcess(snapshotError);
                 return;
             }
-            // Promotion must never carry execution-only input copies into the
-            // committed product directory.  Error/cancel/stale paths are
-            // covered by abandoning the staging transaction; success removes
-            // this per-image directory before publishing any result artifact.
+            // 快照目录位于产物目录之外，且下一行还会尝试删除空的父目录，所以清理失败
+            // 不会把执行期的输入拷贝带进已提交产物，注释里原先的理由已经不成立。
+            // removeRecursively() 失败只可能是 Windows 句柄占用（杀软扫描、资源管理器预览、
+            // 并行消费者），与被删内容无关、更与 DEM 结果正确性无关，因此降级为告警：
+            // 不让临时目录清理的偶发失败作废整幅解算结果（全分辨率解算为小时级）。
             if (!QDir(coreSnapshotDirectory).removeRecursively()) {
-                emit errorProcess(QStringLiteral("Unable to remove consumed transaction-owned DEM v2 input snapshots."));
-                return;
+                InSARLogManager::LogWarning("DemWorker", QStringLiteral(
+                    "无法删除 DEM v2 输入快照临时目录（可能被其他进程占用），已忽略：%1").arg(coreSnapshotDirectory));
             }
             QDir(outputDirectory).rmdir(QStringLiteral(".dem_anchor_input_snapshots"));
 
@@ -1281,6 +1344,11 @@ void DemWorker::Dem(DemAbsolutePhaseAnchorV2Request request)
                 !NodeUtils::writeMatToH5(outputH5, "dem", phaseDem)) {
                 emit errorProcess(QStringLiteral("Failed to create DEM output: ") + outputH5);
                 return;
+            }
+            if (!phaseKBias.empty() && phaseKBias.size() == phaseDem.size()) {
+                if (!NodeUtils::writeMatToH5(outputH5, "k_bias", phaseKBias)) {
+                    InSARLogManager::LogWarning("DemWorker", QString("Failed to write k_bias dataset to %1").arg(outputH5));
+                }
             }
             const Mat burstIndexMat(static_cast<int>(anchorResult.burstCount), 1, CV_32S, burstIndices.data());
             const Mat burstCountMat(static_cast<int>(anchorResult.burstCount), 1, CV_32S, candidateCountByBurst.data());

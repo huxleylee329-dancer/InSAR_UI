@@ -124,6 +124,43 @@ void IonosphericCorrectionWorker::doCorrection(
 
     std::vector<bool> process_ok(image_count, false);
 
+    // 预检：跨影像尺寸一致性。主从复数 SLC 都是全分辨率读入后才判尺寸，而真正昂贵的
+    // 逐对校正在后面 —— 第 N 幅尺寸不符原先要等前 N-1 幅都跑完才暴露。
+    // 这里只探测各景 complex 数据集的维度（读 dataspace，不读数据），毫秒级；
+    // 探测不到就整体跳过这项预检，交给后面的读盘自行报错。
+    {
+        int preflightMasterRows = 0, preflightMasterCols = 0;
+        QString probeError;
+        if (NodeUtils::probeH5DatasetMetadata(slc_paths.at(0), QStringLiteral("complex"),
+                                              &preflightMasterRows, &preflightMasterCols, &probeError) &&
+            preflightMasterRows > 0) {
+            for (int idx = 1; idx < image_count; ++idx) {
+                int slaveRows = 0, slaveCols = 0;
+                if (!NodeUtils::probeH5DatasetMetadata(slc_paths.at(idx), QStringLiteral("complex"),
+                                                       &slaveRows, &slaveCols, &probeError)) {
+                    break;
+                }
+                if (slaveRows != preflightMasterRows || slaveCols != preflightMasterCols) {
+                    fail(QStringLiteral("第%1幅从影像尺寸 (%2 x %3) 与主影像 (%4 x %5) 不一致。"
+                                        "请确认所有输入属于同一景、同一子带与同一多视设置。")
+                        .arg(idx + 1).arg(slaveRows).arg(slaveCols)
+                        .arg(preflightMasterRows).arg(preflightMasterCols));
+                    return;
+                }
+            }
+        }
+    }
+
+    // 主影像复数数据只读一次并复用（原先在从影像循环内每幅重读一遍全分辨率 SLC）
+    Mat master_complex;
+    {
+        NodeUtils::Hdf5Locker locker;
+        if (!NodeUtils::readMatFromH5(slc_paths[0], "complex", master_complex)) {
+            fail(QStringLiteral("无法读取主影像复数数据"));
+            return;
+        }
+    }
+
     // 处理每对 SLC 影像
     for (int idx = 0; idx < image_count; idx++)
     {
@@ -194,17 +231,13 @@ void IonosphericCorrectionWorker::doCorrection(
             continue;
         }
 
-        // 读取 Master 复数 SLC 数据
-        Mat master_complex;
-        ret = NodeUtils::readMatFromH5(slc_paths[0], "complex", master_complex) ? 0 : -1;
-        if (ret < 0) {
-            fail(QStringLiteral("无法读取主影像复数数据"));
-            return;
-        }
-
-        // 读取 Slave 复数 SLC 数据
+        // 读取 Slave 复数 SLC 数据（主影像已在循环外读好并复用）
         Mat slave_complex;
-        ret = NodeUtils::readMatFromH5(slc_paths[idx], "complex", slave_complex) ? 0 : -1;
+        {
+            // 与同函数其它 H5 读写一致，必须持锁
+            NodeUtils::Hdf5Locker locker;
+            ret = NodeUtils::readMatFromH5(slc_paths[idx], "complex", slave_complex) ? 0 : -1;
+        }
         if (ret < 0) {
             fail(QStringLiteral("无法读取第%1幅从影像复数数据").arg(idx + 1));
             return;

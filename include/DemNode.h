@@ -52,9 +52,17 @@ public:
     bool supportsValidation() const override { return true; }
     ::QWidget* createValidationWidget(::QWidget* parent) override;
     std::shared_ptr<ImportedFileData> inputDataForValidation() const { return m_inputData; }
+    std::shared_ptr<InsarDemData> outputDataForValidation() const { return m_outputData; }
+    QString outputNodeName() const { return m_outputNodeName.trimmed(); }
+    QString projectPath() const;
+    QString projectName() const;
+
+    QVector<ParameterInfo> getParameters() const override;
+    std::vector<QString> processingInfo() const override;
 
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;
+    QString portBindingSummary(PortType portType, PortIndex portIndex) const override;
 
 protected:
     bool validateAndRestoreOutput() override;
@@ -70,6 +78,9 @@ private:
     
     QLineEdit* m_outputNodeNameEdit;
 
+    QLabel* m_demPathLabel = nullptr;
+    QComboBox* m_demLabelCombo = nullptr;
+
     // Input/output data
     std::shared_ptr<ImportedFileData> m_inputData;
     std::shared_ptr<AuxiliaryDemData> m_auxiliaryDemData;
@@ -78,6 +89,9 @@ private:
     
     // Parameters
     QString m_outputNodeName;
+    QString m_auxiliaryDemLabel;
+    QString m_legacyDemResourceId;
+    QString m_legacyDemProvenanceId;
     int m_method; // 1: Newton
     int m_times;  // default 20
 
@@ -112,6 +126,7 @@ private:
     void cleanupThreadResources();
     void releaseFinishedThreadResources();
     void createWidget();
+    void refreshAuxiliaryDemLabels();
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
     // 按绝对相位锚定质量收口：存在残差超限告警时进入 Warning，否则 Completed
@@ -122,6 +137,7 @@ private:
     void onModelUpdated(QStandardItemModel* model);
     bool validateInputs() const;
     void updateWidgetSize();
+    void updateParameterWidgetsEnableState(bool enable = true);
     void onMethodChanged(int index);
     QString generateDefaultOutputName() const;
     bool commitWidgetParametersForExecution();
@@ -131,8 +147,6 @@ private:
 
     // Context helpers
     QStandardItemModel* projectModel() const;
-    QString projectPath() const;
-    QString projectName() const;
     XMLFile* projectXml() const;
 
     // Executable interface implementation

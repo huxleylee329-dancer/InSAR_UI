@@ -18,6 +18,8 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QApplication>
+#include <QIntValidator>
+#include <limits>
 #include <QDateTime>
 #include <QStandardItemModel>
 #include <QMessageBox>
@@ -518,8 +520,16 @@ void InterferometricFormationNode::createWidget()
     winWLayout->addWidget(m_winWLabel);
     m_winWEdit = new QLineEdit();
     m_winWEdit->setText(QString::number(m_winW));
+    // 下界取自本节点已有的契约（validateInputs 里的 winW < 3 判定），不另行发明边界。
+    // 原先 4 个数值输入框都是裸 QLineEdit：输入非法或清空时 toInt() 静默返回 0 并入库。
+    m_winWEdit->setValidator(new QIntValidator(3, (std::numeric_limits<int>::max)(), m_winWEdit));
     connect(m_winWEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
-        int val = m_winWEdit->text().toInt();
+        bool ok = false;
+        const int val = m_winWEdit->text().toInt(&ok);
+        if (!ok || val < 3) {
+            m_winWEdit->setText(QString::number(m_winW));
+            return;
+        }
         if (m_winW != val) {
             if (!confirmParameterChange()) {
                 m_winWEdit->setText(QString::number(m_winW));
@@ -540,8 +550,14 @@ void InterferometricFormationNode::createWidget()
     winHLayout->addWidget(m_winHLabel);
     m_winHEdit = new QLineEdit();
     m_winHEdit->setText(QString::number(m_winH));
+    m_winHEdit->setValidator(new QIntValidator(3, (std::numeric_limits<int>::max)(), m_winHEdit));
     connect(m_winHEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
-        int val = m_winHEdit->text().toInt();
+        bool ok = false;
+        const int val = m_winHEdit->text().toInt(&ok);
+        if (!ok || val < 3) {
+            m_winHEdit->setText(QString::number(m_winH));
+            return;
+        }
         if (m_winH != val) {
             if (!confirmParameterChange()) {
                 m_winHEdit->setText(QString::number(m_winH));
@@ -563,8 +579,17 @@ void InterferometricFormationNode::createWidget()
     multRgLayout->addWidget(multRgLabel);
     m_multilookRgEdit = new QLineEdit();
     m_multilookRgEdit->setText(QString::number(m_multilookRg));
+    // 下界取自 validateInputs 里的 mRg > 0；刻意【不设上界】—— 合理的上界取决于本景网格，
+    // 输入时拿不到，凭空设一个反而会误拒合法的多视设置；上界不合法由 worker 的多视网格预检
+    // 给出精确提示（见 InterferometricFormationWorker 的输出行数预检）。
+    m_multilookRgEdit->setValidator(new QIntValidator(1, (std::numeric_limits<int>::max)(), m_multilookRgEdit));
     connect(m_multilookRgEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
-        int val = m_multilookRgEdit->text().toInt();
+        bool ok = false;
+        const int val = m_multilookRgEdit->text().toInt(&ok);
+        if (!ok || val < 1) {
+            m_multilookRgEdit->setText(QString::number(m_multilookRg));
+            return;
+        }
         if (m_multilookRg != val) {
             if (!confirmParameterChange()) {
                 m_multilookRgEdit->setText(QString::number(m_multilookRg));
@@ -584,8 +609,14 @@ void InterferometricFormationNode::createWidget()
     multAzLayout->addWidget(multAzLabel);
     m_multilookAzEdit = new QLineEdit();
     m_multilookAzEdit->setText(QString::number(m_multilookAz));
+    m_multilookAzEdit->setValidator(new QIntValidator(1, (std::numeric_limits<int>::max)(), m_multilookAzEdit));
     connect(m_multilookAzEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
-        int val = m_multilookAzEdit->text().toInt();
+        bool ok = false;
+        const int val = m_multilookAzEdit->text().toInt(&ok);
+        if (!ok || val < 1) {
+            m_multilookAzEdit->setText(QString::number(m_multilookAz));
+            return;
+        }
         if (m_multilookAz != val) {
             if (!confirmParameterChange()) {
                 m_multilookAzEdit->setText(QString::number(m_multilookAz));

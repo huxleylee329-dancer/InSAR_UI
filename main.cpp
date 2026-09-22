@@ -23,6 +23,10 @@
 #include <windows.h>
 #include <stdio.h>
 #include <iostream>
+#include <atomic>
+#include <thread>
+#include <io.h>
+#include <fcntl.h>
 #include "NodeUtils.h"
 #include "InSARLogManager.h"
 #include <QCoreApplication>
@@ -72,6 +76,79 @@ static void setupDebugConsole()
         SetConsoleTitleA("SatExplorer Debug Console");
     }
 }
+
+/**
+ * @brief DLL 的 fprintf(stderr) 输出落盘
+ *
+ * 外部处理 DLL 的根因诊断（例如 SAR2UTM 的 "output grid rejected"）只走 stderr，
+ * 且 CONOUT$ 重定向会把它们挡在持久化日志之外——控制台一关就再也无法复盘。
+ * 这里把 stderr 接到管道，由读取线程按日志管理器的标准通道逐行转发（控制台 + 日志文件）。
+ *
+ * 前提：InSARLogManager 的控制台输出已改为直接写 CONOUT$ 句柄（writeEmergency），
+ * 否则日志管理器自己的输出会被读取线程再次回灌，形成无限回环。
+ * 因此本函数必须在 setupDebugConsole() 与 installQtMessageHandler() 之后调用。
+ */
+namespace {
+
+std::atomic<bool> g_dllOutputCaptureActive{ false };
+
+// 逐行转发到日志管理器。控制台回显不再由本线程手写：日志管理器的 DebugConsole
+// 目标会经 writeEmergency 直写 CONOUT$ 完成，避免同一条输出走两条通道。
+// targets 与 DemWorker 的 DemDLL 保持一致：控制台 + 诊断文件两个 sink。
+void forwardExternalLine(const std::string& text)
+{
+    if (text.empty() || !g_dllOutputCaptureActive.load(std::memory_order_relaxed)) return;
+    InSARLogManager::LogDiagnostic(InSARLogManager::LevelInfo, QStringLiteral("Stderr"),
+        QString::fromLocal8Bit(text.c_str(), static_cast<int>(text.size())).left(2048),
+        LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile,
+        QStringLiteral("stderr"));
+}
+
+void dllOutputReaderLoop(int readFd)
+{
+    std::string pending;
+    char buffer[4096];
+    for (;;) {
+        const int bytesRead = _read(readFd, buffer, static_cast<unsigned>(sizeof(buffer)));
+        if (bytesRead <= 0) break;
+        pending.append(buffer, static_cast<size_t>(bytesRead));
+
+        size_t consumed = 0;
+        for (;;) {
+            const size_t newline = pending.find('\n', consumed);
+            if (newline == std::string::npos) break;
+            std::string line = pending.substr(consumed, newline - consumed);
+            consumed = newline + 1;
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            forwardExternalLine(line);
+        }
+        pending.erase(0, consumed);
+
+        // 长时间不换行的异常输出：截断转发，避免在内存里无限累积
+        if (pending.size() > 65536) {
+            forwardExternalLine(pending);
+            pending.clear();
+        }
+    }
+    _close(readFd);
+}
+
+void setupDllOutputCapture()
+{
+    int pipeFds[2] = { -1, -1 };
+    if (_pipe(pipeFds, 64 * 1024, _O_BINARY) != 0) return;
+    if (_dup2(pipeFds[1], 2) != 0) {
+        _close(pipeFds[0]);
+        _close(pipeFds[1]);
+        return;
+    }
+    _close(pipeFds[1]);                       // 写端已由 fd 2 持有，见 _dup2 语义
+    setvbuf(stderr, nullptr, _IONBF, 0);      // 逐行落盘，不让 CRT 缓冲拖住输出
+    g_dllOutputCaptureActive.store(true);
+    std::thread(dllOutputReaderLoop, pipeFds[0]).detach();
+}
+
+} // namespace
 
 // Global function to load QSS from file
 QString loadStyleSheet(const QString &fileName)
@@ -209,6 +286,8 @@ int main(int argc, char *argv[])
     }
     InSARLogManager::instance().configureDiagnosticSinks(showConsole, writeDiagnosticLog);
     InSARLogManager::installQtMessageHandler();
+    // 必须在控制台与日志管理器都就绪之后再接管 stderr
+    setupDllOutputCapture();
 
     QPixmap* k = new QPixmap(QString(CURSOR_UP_ICON));
 
@@ -225,5 +304,8 @@ int main(int argc, char *argv[])
     mainWindow->showMaximized();
 
     delete k;
-    return a.exec();
+    const int exitCode = a.exec();
+    // 退出阶段停止回灌，避免读取线程与日志管理器、静态析构互踩
+    g_dllOutputCaptureActive.store(false);
+    return exitCode;
 }
