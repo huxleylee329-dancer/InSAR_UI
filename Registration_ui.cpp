@@ -38,21 +38,26 @@ Registration_ui::Registration_ui(QWidget* parent) :
 }
 Registration_ui::~Registration_ui()
 {
+    StopThread();
     if (copy)
     {
         for (int i = 0; i < ui->comboBox->count(); i++)
         {
-            if (!copy->findItems(ui->comboBox->itemText(i)).isEmpty())
-                copy->findItems(ui->comboBox->itemText(i))[0]->setStatusTip(NOT_IN_PROCESS);
+            QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->itemText(i));
+            if (project)
+                project->setStatusTip(NOT_IN_PROCESS);
         }
         for (int i = 0; i < ui->comboBox_project->count(); i++)
         {
-            if (!copy->findItems(ui->comboBox_project->itemText(i)).isEmpty())
-                copy->findItems(ui->comboBox_project->itemText(i))[0]->setStatusTip(NOT_IN_PROCESS);
+            QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox_project->itemText(i));
+            if (project)
+                project->setStatusTip(NOT_IN_PROCESS);
         }
     }
     emit sendCopy(copy);
     Registration_thread = NULL;
+    delete ui;
+    ui = nullptr;
 }
 
 void Registration_ui::updateProcess(int value, QString information)
@@ -89,17 +94,19 @@ void Registration_ui::endThread()
 }
 void Registration_ui::StopThread()
 {
-    if (Registration_thread != NULL)
+    CoregistrationWorker* worker = Registration_thread.data();
+    if (worker)
     {
-        if (Registration_thread->thread()->isRunning())
+        QThread* workerThread = worker->thread();
+        worker->StopProcess();
+        if (workerThread && workerThread->isRunning())
         {
-            Registration_thread->StopProcess();
-            Registration_thread->thread()->requestInterruption();
-            Registration_thread->thread()->quit();
-            Registration_thread->thread()->wait();
+            workerThread->requestInterruption();
+            workerThread->quit();
+            if (QThread::currentThread() != workerThread)
+                workerThread->wait();
         }
     }
-    
 }
 void Registration_ui::TransitModel(QStandardItemModel* model)
 {
@@ -188,23 +195,32 @@ void Registration_ui::ChangeVision(bool Editable)
 void Registration_ui::ShowProjectList(QStandardItemModel *model)
 {
     this->copy = model;
+    if (!copy || copy->rowCount() < 1 || copy->columnCount() < 2 ||
+        !copy->item(0, 0) || !copy->item(0, 1))
+    {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("当前没有可用工程，请先新建或打开工程。"));
+        return;
+    }
     for (int i = 0; i < model->rowCount(); i++)
     {
-        ui->comboBox->addItem(model->item(i,0)->text());
-        ui->comboBox_project->addItem(model->item(i, 0)->text());
-        model->item(i, 0)->setStatusTip(IN_PROCESS);
+        QStandardItem* projectItem = model->item(i, 0);
+        if (!projectItem) continue;
+        ui->comboBox->addItem(projectItem->text());
+        ui->comboBox_project->addItem(projectItem->text());
+        projectItem->setStatusTip(IN_PROCESS);
     }
     this->save_path = copy->item(0, 1)->text();
     QStandardItem* project = NULL;
     int count = 0;
     for (int i = 0; i < model->rowCount(); i++)
     {
-        if (model->item(i, 0)->rowCount() != 0)
+        QStandardItem* projectItem = model->item(i, 0);
+        if (projectItem && projectItem->rowCount() != 0)
         {
-            count = model->item(i, 0)->rowCount();
-            project = model->item(i, 0);
-            ui->comboBox->setCurrentIndex(i);
-            ui->comboBox_project->setCurrentIndex(i);
+            count = projectItem->rowCount();
+            project = projectItem;
+            ui->comboBox->setCurrentIndex(ui->comboBox->findText(projectItem->text()));
+            ui->comboBox_project->setCurrentIndex(ui->comboBox_project->findText(projectItem->text()));
             break;
         }
 
@@ -226,11 +242,13 @@ void Registration_ui::ShowProjectList(QStandardItemModel *model)
             model->data(model->index(i, 1, pro_index)).toString().compare("complex-0.0") == 0
             )
         {
-            ui->comboBox_2->addItem(model->data(model->index(i, 0, pro_index)).toString());
-            ui->comboBox_node->addItem(model->data(model->index(i, 0, pro_index)).toString());
+            QStandardItem* nameItem = project->child(i, 0);
+            if (!nameItem) continue;
+            ui->comboBox_2->addItem(nameItem->text());
+            ui->comboBox_node->addItem(nameItem->text());
             if (!isnodefound)
             {
-                node = project->child(i, 0);
+                node = nameItem;
                 isnodefound = true;
             }
         }
@@ -248,7 +266,7 @@ void Registration_ui::ShowProjectList(QStandardItemModel *model)
     //初始化图像数据节点
     ui->comboBox_masterIndex->clear();
     ui->comboBox_masterIndex2->clear();
-    if (node->rowCount() < 1)
+    if (!node || node->rowCount() < 1)
     {
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("节点无数据！"));
         this->deleteLater();
@@ -256,8 +274,10 @@ void Registration_ui::ShowProjectList(QStandardItemModel *model)
     }
     for (int i = 0; i < node->rowCount(); i++)
     {
-        ui->comboBox_masterIndex->addItem(node->child(i, 0)->text());
-        ui->comboBox_masterIndex2->addItem(node->child(i, 0)->text());
+        QStandardItem* imageItem = node->child(i, 0);
+        if (!imageItem) continue;
+        ui->comboBox_masterIndex->addItem(imageItem->text());
+        ui->comboBox_masterIndex2->addItem(imageItem->text());
     }
     ui->comboBox_masterIndex->setCurrentIndex(0);
     ui->comboBox_masterIndex2->setCurrentIndex(0);
@@ -266,8 +286,18 @@ void Registration_ui::on_comboBox_currentIndexChanged()
 {
     if (ui->comboBox->count() != 0)
     {
-        QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
-        this->save_path = copy->item(project->row(), 1)->text();
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->currentText());
+        if (!project)
+        {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+            return;
+        }
+        QStandardItem* pathItem = copy->item(project->row(), 1);
+        if (!pathItem) {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("当前工程路径信息缺失，请重新打开工程。"));
+            return;
+        }
+        this->save_path = pathItem->text();
         QModelIndex pro_index = copy->indexFromItem(project);
         int count = project->rowCount();
         if (count < 1)
@@ -315,8 +345,18 @@ void Registration_ui::on_comboBox_project_currentIndexChanged()
 {
     if (ui->comboBox_project->count() != 0)
     {
-        QStandardItem* project = copy->findItems(ui->comboBox_project->currentText())[0];
-        this->save_path = copy->item(project->row(), 1)->text();
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox_project->currentText());
+        if (!project)
+        {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+            return;
+        }
+        QStandardItem* pathItem = copy->item(project->row(), 1);
+        if (!pathItem) {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("当前工程路径信息缺失，请重新打开工程。"));
+            return;
+        }
+        this->save_path = pathItem->text();
         QModelIndex pro_index = copy->indexFromItem(project);
         int count = project->rowCount();
         if (count < 1)
@@ -366,7 +406,12 @@ void Registration_ui::on_comboBox_node_currentIndexChanged()
 {
     if (ui->comboBox_node->count() != 0)
     {
-        QStandardItem* project = copy->findItems(ui->comboBox_project->currentText())[0];
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox_project->currentText());
+        if (!project)
+        {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+            return;
+        }
         QStandardItem* node = NULL;
         QModelIndex pro_index = copy->indexFromItem(project);
         for (int i = 0; i < project->rowCount(); i++)
@@ -400,7 +445,12 @@ void Registration_ui::on_comboBox_2_currentIndexChanged()
 {
     if (ui->comboBox_2->count() != 0)
     {
-        QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->currentText());
+        if (!project)
+        {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+            return;
+        }
         QStandardItem* node = NULL;
         QModelIndex pro_index = copy->indexFromItem(project);
         for (int i = 0; i < project->rowCount(); i++)
@@ -535,8 +585,9 @@ void Registration_ui::on_buttonBox_2_accepted()
     }
 
     //防重名检查
-    QStandardItem* project = this->copy->findItems(ui->comboBox_project->currentText())[0];
+    QStandardItem* project = NodeUtils::findFirstModelItem(this->copy, ui->comboBox_project->currentText());
     if (!project) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
         return;
     }
     bool same_name_node = false;

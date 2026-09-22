@@ -2,6 +2,7 @@
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include "ui_S1FrameMerge.h"
+#include <QPointer>
 
 class S1FrameMergeWorker;
 
@@ -19,12 +20,12 @@ public slots:
     void endThread();
     void StopThread();
 private:
-    Ui::S1FrameMerge* ui;
-    QStandardItemModel* copy;
-    S1FrameMergeWorker* S1_frame_merge_worker;
+    Ui::S1FrameMerge* ui = nullptr;
+    QStandardItemModel* copy = nullptr;
+    QPointer<S1FrameMergeWorker> S1_frame_merge_worker;
     QString save_path;
     QString projectFile;
-    int image_number;
+    int image_number = 0;
     void ChangeVision(bool Editable);
 signals:
     void operate(QString projectName, QString savePath, QString dstNode,

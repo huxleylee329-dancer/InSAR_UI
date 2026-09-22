@@ -2,6 +2,7 @@
 #include <QtWidgets/QMainWindow>
 #include <qstandarditemmodel.h>
 #include <QStringList>
+#include <QPointer>
 #include "ui_SlcDeramp.h"
 
 class SLCDerampWorker;
@@ -27,8 +28,8 @@ signals:
 private:
     Ui::SlcDeramp* ui;
     QStandardItemModel* copy;
-    QThread* m_thread;
-    SLCDerampWorker* m_worker;
+    QPointer<QThread> m_thread;
+    QPointer<SLCDerampWorker> m_worker;
 
     QString save_path;
     int m_masterIndex = 1;

@@ -6,6 +6,7 @@
 #include "Preview_Window.h"
 #include"ImageView.h"
 #include<Qtgui>
+#include <QPointer>
 
 class Cut : public QWidget
 {
@@ -13,7 +14,7 @@ class Cut : public QWidget
 public:
     explicit Cut(QWidget* parent = Q_NULLPTR);
     ~Cut();
-    QStandardItemModel* copy;
+    QStandardItemModel* copy = nullptr;
 public slots:
     void ShowProjectList(QStandardItemModel*);
     void updateProcess(int, QString);
@@ -26,15 +27,18 @@ public slots:
     /*裁剪子窗口发送取消消息*/
     void cancelled();
 private:
-    double h5_left, h5_right, h5_top, h5_bottom;
+    double h5_left = 0.0;
+    double h5_right = 0.0;
+    double h5_top = 0.0;
+    double h5_bottom = 0.0;
     /*若已经点击过预览，则禁止再次点击*/
-    bool isPreviewPressed;
+    bool isPreviewPressed = false;
     /*是否正在裁剪*/
-    bool isCutting;
-    Ui::Cut* ui;
+    bool isCutting = false;
+    Ui::Cut* ui = nullptr;
     QString save_path;
-    CutWorker* Cut_thread;
-    int image_number;
+    QPointer<CutWorker> Cut_thread;
+    int image_number = 0;
     void writeXML();
     void ChangeVision(bool Editable);
 signals:

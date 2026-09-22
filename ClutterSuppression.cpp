@@ -20,6 +20,7 @@
 #include <QtConcurrent/QtConcurrentRun>
 #include <algorithm>
 #include <cmath>
+#include <exception>
 #include <vector>
 #include "FormatConversion.h"
 #include "icon_source.h"
@@ -218,8 +219,6 @@ ClutterSuppression::ClutterSuppression(QWidget* parent)
                 updateMethodControls();
                 refreshCurrentResult();
             });
-    updateMethodControls();
-
     filterWatcher = new QFutureWatcher<ClutterSuppressionResult>(this);
     connect(filterWatcher,
             &QFutureWatcher<ClutterSuppressionResult>::finished,
@@ -364,6 +363,7 @@ ClutterSuppression::ClutterSuppression(QWidget* parent)
     filterLayout->addRow(QStringLiteral("每尺度方向数："), mcaAnglesSpinBox);
     filterLayout->addRow(recommendedParametersButton);
     ui->widget_2->hide();
+    updateMethodControls();
 
     const auto oldResultContainers =
         ui->enlGroup->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly);
@@ -1594,8 +1594,36 @@ void ClutterSuppression::on_runFilterButton_clicked()
 
 void ClutterSuppression::onFilterFinished()
 {
-    const ClutterSuppressionResult result = filterWatcher->result();
     setFilterRunning(false);
+
+    ClutterSuppressionResult result;
+    try
+    {
+        result = filterWatcher->result();
+    }
+    catch (const cv::Exception& error)
+    {
+        const QString message = QStringLiteral("杂波抑制后台任务异常：%1")
+                                    .arg(QString::fromUtf8(error.what()));
+        InSARLogManager::LogError(QStringLiteral("ClutterSuppression"), message);
+        QMessageBox::critical(this, QStringLiteral("错误"), message);
+        return;
+    }
+    catch (const std::exception& error)
+    {
+        const QString message = QStringLiteral("杂波抑制后台任务异常：%1")
+                                    .arg(QString::fromUtf8(error.what()));
+        InSARLogManager::LogError(QStringLiteral("ClutterSuppression"), message);
+        QMessageBox::critical(this, QStringLiteral("错误"), message);
+        return;
+    }
+    catch (...)
+    {
+        const QString message = QStringLiteral("杂波抑制后台任务发生未知异常。");
+        InSARLogManager::LogError(QStringLiteral("ClutterSuppression"), message);
+        QMessageBox::critical(this, QStringLiteral("错误"), message);
+        return;
+    }
 
     const cv::Mat filteredImage = result.suppressedImage;
     if (filteredImage.empty())

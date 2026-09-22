@@ -2,6 +2,7 @@
 #include"ExportKMLWorker.h"
 #include"Coordinate.h"
 #include"icon_source.h"
+#include"NodeUtils.h"
 #include<qdialog.h>
 #include<qcheckbox.h>
 #include<qscrollarea.h>
@@ -148,21 +149,31 @@ void Export_KML::Paint_Colorbar(double mMin, double mMax, QString save_path)
 void Export_KML::ShowProjectList(QStandardItemModel* model)
 {
     this->copy = model;
+    ui->comboBox->clear();
+    ui->comboBox_2->clear();
+    if (!model || model->rowCount() < 1 || model->columnCount() < 2) return;
+
     for (int i = 0; i < model->rowCount(); i++)
     {
-        ui->comboBox->addItem(model->item(i, 0)->text());
-        model->item(i, 0)->setStatusTip(IN_PROCESS);
+        QStandardItem* projectItem = model->item(i, 0);
+        QStandardItem* pathItem = model->item(i, 1);
+        if (!projectItem || !pathItem) continue;
+        ui->comboBox->addItem(projectItem->text());
+        projectItem->setStatusTip(IN_PROCESS);
     }
 
     QStandardItem* project = NULL;
     int count = 0;
     for (int i = 0; i < model->rowCount(); i++)
     {
-        if (model->item(i, 0)->rowCount() != 0)
+        QStandardItem* projectItem = model->item(i, 0);
+        QStandardItem* pathItem = model->item(i, 1);
+        if (projectItem && pathItem && projectItem->rowCount() != 0)
         {
-            count = model->item(i, 0)->rowCount();
-            project = model->item(i, 0);
-            ui->comboBox->setCurrentIndex(i);
+            count = projectItem->rowCount();
+            project = projectItem;
+            const int comboIndex = ui->comboBox->findText(projectItem->text());
+            if (comboIndex >= 0) ui->comboBox->setCurrentIndex(comboIndex);
             break;
         }
 
@@ -172,18 +183,21 @@ void Export_KML::ShowProjectList(QStandardItemModel* model)
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
         ui->comboBox_2->clear();
         this->deleteLater();
+        return;
     }
     QStandardItem* node = NULL;
     bool isnodefound = false;
     ui->comboBox_2->clear();
     for (int i = 0; i < count; i++)
     {
-        if (project->child(i, 1)->text() == QString("SBAS-1.0"))
+        QStandardItem* childItem = project->child(i, 0);
+        QStandardItem* rankItem = project->child(i, 1);
+        if (childItem && rankItem && rankItem->text() == QString("SBAS-1.0"))
         {
-            ui->comboBox_2->addItem(project->child(i, 0)->text());
+            ui->comboBox_2->addItem(childItem->text());
             if (!isnodefound)
             {
-                node = project->child(i, 0);
+                node = childItem;
                 isnodefound = true;
             }
 
@@ -194,6 +208,7 @@ void Export_KML::ShowProjectList(QStandardItemModel* model)
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无数据！"));
         ui->comboBox_2->clear();
         this->deleteLater();
+        return;
     }
     else
     {
@@ -206,16 +221,23 @@ void Export_KML::on_comboBox_currentIndexChanged()
     {
         bool isnodefound = false;
         QStandardItem* node = NULL;
-        QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->currentText());
+        if (!project) {
+            ui->comboBox_2->clear();
+            QMessageBox::warning(this, "Warning!", QStringLiteral("未找到当前工程，请刷新工程列表后重试。"));
+            return;
+        }
         ui->comboBox_2->clear();
         for (int i = 0; i < project->rowCount(); i++)
         {
-            if (project->child(i, 1)->text() == QString("SBAS-1.0"))
+            QStandardItem* childItem = project->child(i, 0);
+            QStandardItem* rankItem = project->child(i, 1);
+            if (childItem && rankItem && rankItem->text() == QString("SBAS-1.0"))
             {
-                ui->comboBox_2->addItem(project->child(i, 0)->text());
+                ui->comboBox_2->addItem(childItem->text());
                 if (!isnodefound)
                 {
-                    node = project->child(i, 0);
+                    node = childItem;
                     isnodefound = true;
                 }
             }
@@ -260,15 +282,20 @@ void Export_KML::on_comboBox_2_currentIndexChanged()
 {
     if (ui->comboBox_2->count() > 0)
     {
-        QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->currentText());
+        if (!project) {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("未找到当前工程，请刷新工程列表后重试。"));
+            return;
+        }
         QStandardItem* node = NULL;
         QModelIndex pro_index = copy->indexFromItem(project);
         for (int i = 0; i < project->rowCount(); i++)
         {
-            QString temp = project->child(i, 0)->text();
-            if (project->child(i, 0)->text() == ui->comboBox_2->currentText())
+            QStandardItem* childItem = project->child(i, 0);
+            if (childItem && childItem->text() == ui->comboBox_2->currentText())
             {
-                node = project->child(i, 0); break;
+                node = childItem;
+                break;
             }
         }
 
@@ -290,7 +317,13 @@ void Export_KML::on_Browse_pressed()
 void Export_KML::on_Export_pressed()
 {
     bool bFlag = false;
-    if (copy->item(ui->comboBox->currentIndex(), 0)->rowCount() == 0)
+    QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->currentText());
+    if (!project)
+    {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("未找到当前工程，请刷新工程列表后重试。"));
+        return;
+    }
+    if (project->rowCount() == 0)
     {
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程下未检测到数据！请先导入图像或更换工程！"));
         return;
@@ -318,15 +351,22 @@ void Export_KML::on_Export_pressed()
         return;
     }
 
-    QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
     QString h5_path;
     for (int i = 0; i < project->rowCount(); i++)
     {
-        if (project->child(i, 0)->text() == ui->comboBox_2->currentText())
+        QStandardItem* node = project->child(i, 0);
+        if (node && node->text() == ui->comboBox_2->currentText())
         {
-            h5_path = project->child(i, 0)->child(0, 1)->text();
+            QStandardItem* pathItem = node->child(0, 1);
+            if (pathItem)
+                h5_path = pathItem->text();
             break;
         }
+    }
+    if (h5_path.isEmpty())
+    {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("所选节点没有有效的 H5 数据路径。"));
+        return;
     }
 
     ChangeVision(false);

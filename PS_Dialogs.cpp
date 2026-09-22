@@ -78,31 +78,44 @@ void PS_Candidate_Dialog::ShowProjectList(QStandardItemModel* model)
 {
     m_projectModel = model;
     m_projectCombo->clear();
+    m_srcNodeCombo->clear();
+    m_projectPath.clear();
+    m_projectName.clear();
+    if (!model || model->rowCount() < 1 || model->columnCount() < 2) return;
+
     for (int i = 0; i < model->rowCount(); ++i) {
-        m_projectCombo->addItem(model->item(i, 0)->text());
+        QStandardItem* projectItem = model->item(i, 0);
+        QStandardItem* pathItem = model->item(i, 1);
+        if (!projectItem || !pathItem) continue;
+        m_projectCombo->addItem(projectItem->text());
     }
-    if (model->rowCount() > 0) {
+    if (m_projectCombo->count() > 0) {
         onProjectChanged();
     }
 }
 
 void PS_Candidate_Dialog::onProjectChanged()
 {
+    m_srcNodeCombo->clear();
+    m_projectPath.clear();
+    m_projectName.clear();
     if (!m_projectModel || m_projectCombo->count() == 0) return;
 
-    m_srcNodeCombo->clear();
     QString projName = m_projectCombo->currentText();
-    QList<QStandardItem*> found = m_projectModel->findItems(projName);
-    if (found.isEmpty()) return;
+    QStandardItem* projectItem = NodeUtils::findFirstModelItem(m_projectModel, projName);
+    if (!projectItem) return;
+    QStandardItem* pathItem = m_projectModel->item(projectItem->row(), 1);
+    if (!pathItem) return;
 
-    QStandardItem* projectItem = found.first();
-    m_projectPath = m_projectModel->item(projectItem->row(), 1)->text();
+    m_projectPath = pathItem->text();
     m_projectName = projName;
 
     // 筛选 complex-2.0 节点（配准后SLC映像集）
     for (int i = 0; i < projectItem->rowCount(); ++i) {
-        if (projectItem->child(i, 1)->text() == "complex-2.0") {
-            m_srcNodeCombo->addItem(projectItem->child(i, 0)->text());
+        QStandardItem* childItem = projectItem->child(i, 0);
+        QStandardItem* rankItem = projectItem->child(i, 1);
+        if (childItem && rankItem && rankItem->text() == "complex-2.0") {
+            m_srcNodeCombo->addItem(childItem->text());
         }
     }
 }
@@ -117,16 +130,23 @@ void PS_Candidate_Dialog::onAccept()
         return;
     }
 
+    if (!m_projectModel) {
+        QMessageBox::warning(this, "Warning", QStringLiteral("工程数据不可用，请重新打开工程。"));
+        return;
+    }
     QString projName = m_projectCombo->currentText();
-    QList<QStandardItem*> found = m_projectModel->findItems(projName);
-    if (found.isEmpty()) return;
-    QStandardItem* projectItem = found.first();
+    QStandardItem* projectItem = NodeUtils::findFirstModelItem(m_projectModel, projName);
+    if (!projectItem) {
+        QMessageBox::warning(this, "Warning", QStringLiteral("所选工程不存在或已被关闭。"));
+        return;
+    }
 
     // 找到该节点的子文件路径列表
     QStandardItem* srcNodeItem = nullptr;
     for (int i = 0; i < projectItem->rowCount(); ++i) {
-        if (projectItem->child(i, 0)->text() == selectedNode) {
-            srcNodeItem = projectItem->child(i, 0);
+        QStandardItem* childItem = projectItem->child(i, 0);
+        if (childItem && childItem->text() == selectedNode) {
+            srcNodeItem = childItem;
             break;
         }
     }
@@ -138,7 +158,14 @@ void PS_Candidate_Dialog::onAccept()
 
     QStringList slcList;
     for (int i = 0; i < srcNodeItem->rowCount(); ++i) {
-        slcList.append(srcNodeItem->child(i, 1)->text());
+        QStandardItem* pathItem = srcNodeItem->child(i, 1);
+        if (pathItem && !pathItem->text().isEmpty()) {
+            slcList.append(pathItem->text());
+        }
+    }
+    if (slcList.isEmpty()) {
+        QMessageBox::warning(this, "Warning", QStringLiteral("所选影像集没有有效的数据路径！"));
+        return;
     }
 
     double daThresh = m_daThresholdEdit->text().toDouble();
@@ -404,33 +431,48 @@ void PS_Network_Dialog::ShowProjectList(QStandardItemModel* model)
 {
     m_projectModel = model;
     m_projectCombo->clear();
+    m_candidatesCombo->clear();
+    m_slcCombo->clear();
+    m_projectPath.clear();
+    m_projectName.clear();
+    if (!model || model->rowCount() < 1 || model->columnCount() < 2) return;
+
     for (int i = 0; i < model->rowCount(); ++i) {
-        m_projectCombo->addItem(model->item(i, 0)->text());
+        QStandardItem* projectItem = model->item(i, 0);
+        QStandardItem* pathItem = model->item(i, 1);
+        if (!projectItem || !pathItem) continue;
+        m_projectCombo->addItem(projectItem->text());
     }
-    if (model->rowCount() > 0) {
+    if (m_projectCombo->count() > 0) {
         onProjectChanged();
     }
 }
 
 void PS_Network_Dialog::onProjectChanged()
 {
-    if (!m_projectModel || m_projectCombo->count() == 0) return;
-
     m_candidatesCombo->clear();
     m_slcCombo->clear();
+    m_projectPath.clear();
+    m_projectName.clear();
+    if (!m_projectModel || m_projectCombo->count() == 0) return;
+
     
     QString projName = m_projectCombo->currentText();
-    QList<QStandardItem*> found = m_projectModel->findItems(projName);
-    if (found.isEmpty()) return;
+    QStandardItem* projectItem = NodeUtils::findFirstModelItem(m_projectModel, projName);
+    if (!projectItem) return;
+    QStandardItem* pathItem = m_projectModel->item(projectItem->row(), 1);
+    if (!pathItem) return;
 
-    QStandardItem* projectItem = found.first();
-    m_projectPath = m_projectModel->item(projectItem->row(), 1)->text();
+    m_projectPath = pathItem->text();
     m_projectName = projName;
 
     // 筛选子节点
     for (int i = 0; i < projectItem->rowCount(); ++i) {
-        QString rtype = projectItem->child(i, 1)->text();
-        QString name = projectItem->child(i, 0)->text();
+        QStandardItem* childItem = projectItem->child(i, 0);
+        QStandardItem* rankItem = projectItem->child(i, 1);
+        if (!childItem || !rankItem) continue;
+        const QString rtype = rankItem->text();
+        const QString name = childItem->text();
         if (rtype == "mask-1.0") {
             m_candidatesCombo->addItem(name);
         } else if (rtype == "complex-2.0") {
@@ -450,16 +492,23 @@ void PS_Network_Dialog::onAccept()
         return;
     }
 
+    if (!m_projectModel) {
+        QMessageBox::warning(this, "Warning", QStringLiteral("工程数据不可用，请重新打开工程。"));
+        return;
+    }
     QString projName = m_projectCombo->currentText();
-    QList<QStandardItem*> found = m_projectModel->findItems(projName);
-    if (found.isEmpty()) return;
-    QStandardItem* projectItem = found.first();
+    QStandardItem* projectItem = NodeUtils::findFirstModelItem(m_projectModel, projName);
+    if (!projectItem) {
+        QMessageBox::warning(this, "Warning", QStringLiteral("所选工程不存在或已被关闭。"));
+        return;
+    }
 
     // 1. 查找候选点文件路径 (PS_candidates.h5)
     QStandardItem* candNodeItem = nullptr;
     for (int i = 0; i < projectItem->rowCount(); ++i) {
-        if (projectItem->child(i, 0)->text() == candidatesNode) {
-            candNodeItem = projectItem->child(i, 0);
+        QStandardItem* childItem = projectItem->child(i, 0);
+        if (childItem && childItem->text() == candidatesNode) {
+            candNodeItem = childItem;
             break;
         }
     }
@@ -467,20 +516,29 @@ void PS_Network_Dialog::onAccept()
         QMessageBox::warning(this, "Warning", QStringLiteral("候选点数据文件不存在！"));
         return;
     }
-    QString candH5Path = candNodeItem->child(0, 1)->text();
+    QStandardItem* candidatePathItem = candNodeItem->child(0, 1);
+    if (!candidatePathItem || candidatePathItem->text().isEmpty()) {
+        QMessageBox::warning(this, "Warning", QStringLiteral("候选点数据路径不存在！"));
+        return;
+    }
+    QString candH5Path = candidatePathItem->text();
 
     // 2. 查找配准影像集路径列表
     QStandardItem* slcNodeItem = nullptr;
     for (int i = 0; i < projectItem->rowCount(); ++i) {
-        if (projectItem->child(i, 0)->text() == slcNode) {
-            slcNodeItem = projectItem->child(i, 0);
+        QStandardItem* childItem = projectItem->child(i, 0);
+        if (childItem && childItem->text() == slcNode) {
+            slcNodeItem = childItem;
             break;
         }
     }
     if (!slcNodeItem || slcNodeItem->rowCount() == 0) return;
     QStringList slcList;
     for (int i = 0; i < slcNodeItem->rowCount(); ++i) {
-        slcList.append(slcNodeItem->child(i, 1)->text());
+        QStandardItem* pathItem = slcNodeItem->child(i, 1);
+        if (pathItem && !pathItem->text().isEmpty()) {
+            slcList.append(pathItem->text());
+        }
     }
     if (slcList.size() < 2) {
         QMessageBox::warning(this, "Warning", QStringLiteral("PS 网络至少需要两景配准影像！"));
@@ -755,32 +813,46 @@ void PS_TimeSeries_Dialog::ShowProjectList(QStandardItemModel* model)
 {
     m_projectModel = model;
     m_projectCombo->clear();
+    m_networkCombo->clear();
+    m_projectPath.clear();
+    m_projectName.clear();
+    if (!model || model->rowCount() < 1 || model->columnCount() < 2) return;
+
     for (int i = 0; i < model->rowCount(); ++i) {
-        m_projectCombo->addItem(model->item(i, 0)->text());
+        QStandardItem* projectItem = model->item(i, 0);
+        QStandardItem* pathItem = model->item(i, 1);
+        if (!projectItem || !pathItem) continue;
+        m_projectCombo->addItem(projectItem->text());
     }
-    if (model->rowCount() > 0) {
+    if (m_projectCombo->count() > 0) {
         onProjectChanged();
     }
 }
 
 void PS_TimeSeries_Dialog::onProjectChanged()
 {
+    m_networkCombo->clear();
+    m_projectPath.clear();
+    m_projectName.clear();
     if (!m_projectModel || m_projectCombo->count() == 0) return;
 
-    m_networkCombo->clear();
     
     QString projName = m_projectCombo->currentText();
-    QList<QStandardItem*> found = m_projectModel->findItems(projName);
-    if (found.isEmpty()) return;
+    QStandardItem* projectItem = NodeUtils::findFirstModelItem(m_projectModel, projName);
+    if (!projectItem) return;
+    QStandardItem* pathItem = m_projectModel->item(projectItem->row(), 1);
+    if (!pathItem) return;
 
-    QStandardItem* projectItem = found.first();
-    m_projectPath = m_projectModel->item(projectItem->row(), 1)->text();
+    m_projectPath = pathItem->text();
     m_projectName = projName;
 
     // 筛选子节点 (主要是 mask-1.0，PSNetworkWorker 也是输出的 mask-1.0 类型的网络成果)
     for (int i = 0; i < projectItem->rowCount(); ++i) {
-        QString rtype = projectItem->child(i, 1)->text();
-        QString name = projectItem->child(i, 0)->text();
+        QStandardItem* childItem = projectItem->child(i, 0);
+        QStandardItem* rankItem = projectItem->child(i, 1);
+        if (!childItem || !rankItem) continue;
+        const QString rtype = rankItem->text();
+        const QString name = childItem->text();
         if (rtype == "mask-1.0" && name.contains("Network", Qt::CaseInsensitive)) {
             m_networkCombo->addItem(name);
         }
@@ -797,21 +869,33 @@ void PS_TimeSeries_Dialog::onAccept()
         return;
     }
 
+    if (!m_projectModel) {
+        QMessageBox::warning(this, "Warning", QStringLiteral("工程数据不可用，请重新打开工程。"));
+        return;
+    }
     QString projName = m_projectCombo->currentText();
-    QList<QStandardItem*> found = m_projectModel->findItems(projName);
-    if (found.isEmpty()) return;
-    QStandardItem* projectItem = found.first();
+    QStandardItem* projectItem = NodeUtils::findFirstModelItem(m_projectModel, projName);
+    if (!projectItem) {
+        QMessageBox::warning(this, "Warning", QStringLiteral("所选工程不存在或已被关闭。"));
+        return;
+    }
 
     // 查找网络 H5 路径
     QStandardItem* netNodeItem = nullptr;
     for (int i = 0; i < projectItem->rowCount(); ++i) {
-        if (projectItem->child(i, 0)->text() == networkNodeName) {
-            netNodeItem = projectItem->child(i, 0);
+        QStandardItem* childItem = projectItem->child(i, 0);
+        if (childItem && childItem->text() == networkNodeName) {
+            netNodeItem = childItem;
             break;
         }
     }
     if (!netNodeItem || netNodeItem->rowCount() == 0) return;
-    QString netH5Path = netNodeItem->child(0, 1)->text();
+    QStandardItem* networkPathItem = netNodeItem->child(0, 1);
+    if (!networkPathItem || networkPathItem->text().isEmpty()) {
+        QMessageBox::warning(this, "Warning", QStringLiteral("PS 网络数据路径不存在！"));
+        return;
+    }
+    QString netH5Path = networkPathItem->text();
 
     double cohThresh = m_coherenceThreshEdit->text().toDouble();
     double maxDef = m_maxDeformationRateEdit->text().toDouble();

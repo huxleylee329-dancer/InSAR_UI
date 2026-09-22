@@ -1,30 +1,5 @@
 /* Import node widget styles - importnodes.qss */
 
-/* Source Node - blue */
-QLineEdit#sourceLineEdit {
-    background-color: #107EBC;
-    border-radius: 5px;
-    padding: 5px;
-    color: white;
-    border: none;
-}
-
-/* Math Node - secondary blue */
-QLabel#mathLabel {
-    background-color: #107EBC;
-    border-radius: 5px;
-    padding: 5px;
-    color: white;
-}
-
-/* Display Node - secondary blue */
-QLabel#displayLabel {
-    background-color: #107EBC;
-    border-radius: 5px;
-    padding: 5px;
-    color: white;
-}
-
 /* Import node buttons */
 ImportNodeBase QPushButton.primary {
     color: white;

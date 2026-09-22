@@ -66,18 +66,6 @@ stylesheets/
 
 ---
 
-### 3. TestNodes（节点编辑器中的测试节点）
-
-| 节点 | 之前 | 之后 | 修改文件 |
-|------|-------|-------|----------|
-| **SimpleSourceNode** | 内联蓝色 `#4a9acf` | QSS 样式 `QLineEdit#sourceLineEdit` | `importnodes.qss` |
-| **SimpleMathNode** | 内联蓝色 `#3a7aaf` | QSS 样式 `QLabel#mathLabel` | `importnodes.qss` |
-| **SimpleDisplayNode** | 内联蓝色 `#3a7aaf` | QSS 样式 `QLabel#displayLabel` | `importnodes.qss` |
-
-**变化：** 不再使用 `setStyleSheet()` 内联样式，而是通过 `setObjectName()` 给控件分配唯一标识，样式由 QSS 文件统一管理。
-
----
-
 ### 4. Node Editor（节点编辑器窗口）
 
 | 组件 | 之前 | 之后 | 修改文件 |
@@ -152,7 +140,7 @@ QPushButton {
 }
 
 /* ID 选择器（使用 objectName） */
-QLineEdit#sourceLineEdit {
+QLineEdit#exampleLineEdit {
     background-color: #4a9acf;
 }
 
@@ -209,19 +197,6 @@ QLineEdit {
 QLineEdit#searchBox {
     background-color: #F0F0F0;  /* 改背景 */
     border: 2px solid #4a9acf;  /* 改边框 */
-}
-```
-
-#### 场景4：修改 TestNodes 颜色
-
-编辑 `stylesheets/importnodes.qss`：
-```css
-QLineEdit#sourceLineEdit {
-    background-color: #ff6b6b;  /* 改为红色 */
-}
-
-QLabel#mathLabel, QLabel#displayLabel {
-    background-color: #51cf66;  /* 改为绿色 */
 }
 ```
 
@@ -330,8 +305,6 @@ QWidget#myCustomWidget {
 | `main.cpp` | QSS 加载和初始化 | 修改加载逻辑、添加新的样式文件 |
 | `MainWindow.h/cpp` | 主题切换功能 | 添加新的主题选项、菜单项 |
 | `Config.ini` | 主题配置持久化 | 修改默认主题、添加新配置项 |
-| `TestNodes.cpp` | 测试节点 objectName 设置 | 添加新测试节点、设置新的 objectName |
-
 ---
 
 ## 调试

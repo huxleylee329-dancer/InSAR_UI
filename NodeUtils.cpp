@@ -5401,6 +5401,18 @@ static bool generateJpgPreviewFromH5Direct(const QString& h5Path, const QString&
     return false;
 }
 
+QStandardItem* findFirstModelItem(QStandardItemModel* model,
+                                  const QString& text,
+                                  int column)
+{
+    if (!model || text.isEmpty() || column < 0 || column >= model->columnCount()) {
+        return nullptr;
+    }
+
+    const QList<QStandardItem*> items = model->findItems(text, Qt::MatchExactly, column);
+    return items.value(0, nullptr);
+}
+
 QStandardItem* findOrCreateProjectNode(
     QStandardItem* project,
     const QString& nodeName,
@@ -5412,10 +5424,12 @@ QStandardItem* findOrCreateProjectNode(
 
     // 1. 查找是否已存在相同名称和 Rank 的节点
     for (int i = 0; i < project->rowCount(); ++i) {
-        if (project->child(i, 0)->text() == nodeName &&
-            project->child(i, 1) && project->child(i, 1)->text() == rankType) {
+        QStandardItem* childItem = project->child(i, 0);
+        QStandardItem* rankItem = project->child(i, 1);
+        if (childItem && childItem->text() == nodeName &&
+            rankItem && rankItem->text() == rankType) {
             if (created) *created = false;
-            return project->child(i, 0);
+            return childItem;
         }
     }
 
@@ -5492,9 +5506,10 @@ QStandardItem* findOrCreateChildItem(
 
     // 1. 查找是否已存在该子项
     for (int i = 0; i < parent->rowCount(); ++i) {
-        if (parent->child(i, 0)->text() == childName) {
+        QStandardItem* childItem = parent->child(i, 0);
+        if (childItem && childItem->text() == childName) {
             if (created) *created = false;
-            return parent->child(i, 0);
+            return childItem;
         }
     }
 

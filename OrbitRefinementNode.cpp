@@ -306,7 +306,7 @@ bool OrbitRefinementNode::validateAndRestoreOutput()
     // 3. 自愈重建左侧项目树节点
     QStandardItemModel* model = projectModel();
     if (model) {
-        QStandardItem* projectItem = model->findItems(projectName())[0];
+        QStandardItem* projectItem = NodeUtils::findFirstModelItem(model, projectName());
         if (projectItem) {
             QStandardItem* refNodeItem = nullptr;
             for (int i = 0; i < projectItem->rowCount(); i++) {
@@ -353,7 +353,13 @@ bool OrbitRefinementNode::validateAndRestoreOutput()
                     refNodeItem->setChild(refNodeItem->rowCount() - 1, 1, childPath);
                 }
             }
+        } else {
+            InSARLogManager::LogWarning("OrbitRefinementNode",
+                QStringLiteral("恢复结果时未找到工程“%1”，已跳过项目树重建。").arg(projectName()));
         }
+    } else {
+        InSARLogManager::LogWarning("OrbitRefinementNode",
+            QStringLiteral("恢复结果时项目模型不可用，已跳过项目树重建。"));
     }
 
     return true;

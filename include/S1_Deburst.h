@@ -4,6 +4,7 @@
 #include "ui_S1Deburst.h"
 #include "S1DeburstWorker.h"
 #include <QThread>
+#include <QPointer>
 #include <QStringList>
 
 class S1_Deburst : public QWidget
@@ -20,13 +21,13 @@ public slots:
     void StopThread();
     void TransitModel(QStandardItemModel*);
 private:
-    Ui::S1Deburst* ui;
-    QStandardItemModel* copy;
-    S1DeburstWorker* S1_Deburst_worker;
-    QThread* m_thread;
+    Ui::S1Deburst* ui = nullptr;
+    QStandardItemModel* copy = nullptr;
+    QPointer<S1DeburstWorker> S1_Deburst_worker;
+    QPointer<QThread> m_thread;
     QString save_path;
     QString projectFile;
-    int image_number;
+    int image_number = 0;
     void ChangeVision(bool Editable);
 signals:
     void operate(QString, QString, QString, QStringList);

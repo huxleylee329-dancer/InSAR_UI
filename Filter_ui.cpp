@@ -35,16 +35,20 @@ Filter_ui::Filter_ui(QWidget* parent) :
 }
 Filter_ui::~Filter_ui()
 {
+    StopThread();
     emit sendCopy(copy);
-    Filter_thread = NULL;
     if (copy)
     {
         for (int i = 0; i < ui->comboBox->count(); i++)
         {
-            if (!copy->findItems(ui->comboBox->itemText(i)).isEmpty())
-                copy->findItems(ui->comboBox->itemText(i))[0]->setStatusTip(NOT_IN_PROCESS);
+            QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->itemText(i));
+            if (project)
+                project->setStatusTip(NOT_IN_PROCESS);
         }
     }
+    Filter_thread = nullptr;
+    delete ui;
+    ui = nullptr;
 }
 
 void Filter_ui::updateProcess(int value, QString information)
@@ -58,11 +62,6 @@ void Filter_ui::endProcess()
     Filter_thread->thread()->quit();
     Filter_thread->thread()->wait();
     ui->progressBar->hide();
-    /*if (copy)
-    {
-        if (copy->findItems(ui->comboBox->currentText())[0])
-            copy->findItems(ui->comboBox->currentText())[0]->setStatusTip(NOT_IN_PROCESS);
-    }*/
     this->close();
 }
 void Filter_ui::endThread()
@@ -72,13 +71,17 @@ void Filter_ui::endThread()
 }
 void Filter_ui::StopThread()
 {
-    if(Filter_thread != NULL)
-        if (Filter_thread->thread()->isRunning())
+    DenoiseWorker* worker = Filter_thread.data();
+    if (!worker) return;
+
+    QThread* workerThread = worker->thread();
+    worker->StopProcess();
+    if (workerThread && workerThread->isRunning())
     {
-        Filter_thread->StopProcess();
-        Filter_thread->thread()->requestInterruption();
-        Filter_thread->thread()->quit();
-        Filter_thread->thread()->wait();
+        workerThread->requestInterruption();
+        workerThread->quit();
+        if (QThread::currentThread() != workerThread)
+            workerThread->wait();
     }
     //if (copy)
     //{
@@ -193,23 +196,27 @@ void Filter_ui::ChangeVision(bool Editable)
 void Filter_ui::ShowProjectList(QStandardItemModel* model)
 {
     if (!model) return;
-    if (model->rowCount() < 1) return;
+    if (model->rowCount() < 1 || model->columnCount() < 2 ||
+        !model->item(0, 0) || !model->item(0, 1)) return;
     this->copy = model;
     for (int i = 0; i < model->rowCount(); i++)
     {
-        ui->comboBox->addItem(model->item(i, 0)->text());
-        model->item(i, 0)->setStatusTip(IN_PROCESS);
+        QStandardItem* projectItem = model->item(i, 0);
+        if (!projectItem) continue;
+        ui->comboBox->addItem(projectItem->text());
+        projectItem->setStatusTip(IN_PROCESS);
     }
     this->save_path = copy->item(0, 1)->text();
     QStandardItem* project = NULL;
     int count = 0;
     for (int i = 0; i < model->rowCount(); i++)
     {
-        if (model->item(i, 0)->rowCount() != 0)
+        QStandardItem* projectItem = model->item(i, 0);
+        if (projectItem && projectItem->rowCount() != 0)
         {
-            count = model->item(i, 0)->rowCount();
-            project = model->item(i, 0);
-            ui->comboBox->setCurrentIndex(i);
+            count = projectItem->rowCount();
+            project = projectItem;
+            ui->comboBox->setCurrentIndex(ui->comboBox->findText(projectItem->text()));
             break;
         }
 
@@ -218,6 +225,7 @@ void Filter_ui::ShowProjectList(QStandardItemModel* model)
     {
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
         this->deleteLater();
+        return;
     }
     QModelIndex pro_index = model->indexFromItem(project);
     ui->comboBox_2->clear();
@@ -230,6 +238,7 @@ void Filter_ui::ShowProjectList(QStandardItemModel* model)
     {
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("未检测到可处理数据，请先生成干涉相位！"));
         this->deleteLater();
+        return;
     }
     ui->comboBox_2->setCurrentIndex(0);
 }
@@ -238,8 +247,18 @@ void Filter_ui::on_comboBox_currentIndexChanged()
     if (ui->comboBox->count() != 0)
     {
         /*this->save_path = copy->item(ui->comboBox->currentIndex(), 1)->text();*/
-        QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
-        this->save_path = copy->item(project->row(), 1)->text();
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->currentText());
+        if (!project)
+        {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+            return;
+        }
+        QStandardItem* pathItem = copy->item(project->row(), 1);
+        if (!pathItem) {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("当前工程路径信息缺失，请重新打开工程。"));
+            return;
+        }
+        this->save_path = pathItem->text();
         QModelIndex pro_index = copy->indexFromItem(project);
         int count = project->rowCount();
         ui->comboBox_2->clear();

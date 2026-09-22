@@ -1,0 +1,15 @@
+{
+  "model": "sar_ship_model_v2.onnx",
+  "feature_count": 8,
+  "features": [
+    "high_frequency_energy_ratio",
+    "diff_box",
+    "glcm_correlation",
+    "glcm_contrast",
+    "glcm_asm",
+    "target_background_contrast",
+    "largest_bright_area_ratio",
+    "largest_bright_aspect_ratio"
+  ],
+  "threshold": 0.6579999999999999
+}

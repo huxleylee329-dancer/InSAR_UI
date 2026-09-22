@@ -30,14 +30,18 @@ SLC_deramp::SLC_deramp(QWidget* parent) :
 }
 SLC_deramp::~SLC_deramp()
 {
+    StopThread();
     if (copy)
     {
-        if (copy->findItems(ui->comboBox->currentText())[0])
-            copy->findItems(ui->comboBox->currentText())[0]->setStatusTip(NOT_IN_PROCESS);
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->currentText());
+        if (project)
+            project->setStatusTip(NOT_IN_PROCESS);
     }
     emit sendCopy(copy);
     m_thread = nullptr;
     m_worker = nullptr;
+    delete ui;
+    ui = nullptr;
 }
 
 void SLC_deramp::updateProcess(int value, QString information)
@@ -64,20 +68,33 @@ void SLC_deramp::endThread()
 }
 void SLC_deramp::StopThread()
 {
-    if (m_thread && m_thread->isRunning())
+    if (m_worker)
+        m_worker->StopProcess();
+
+    QThread* workerThread = m_thread.data();
+    if (workerThread && workerThread->isRunning())
     {
-        m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
+        workerThread->requestInterruption();
+        workerThread->quit();
+        if (QThread::currentThread() != workerThread)
+            workerThread->wait();
     }
 }
 void SLC_deramp::ShowProjectList(QStandardItemModel* model)
 {
     this->copy = model;
+    if (!copy || copy->rowCount() < 1 || copy->columnCount() < 2 ||
+        !copy->item(0, 0) || !copy->item(0, 1))
+    {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("当前没有可用工程，请先新建或打开工程。"));
+        return;
+    }
     for (int i = 0; i < model->rowCount(); i++)
     {
-        ui->comboBox->addItem(model->item(i, 0)->text());
-        model->item(i, 0)->setStatusTip(IN_PROCESS);
+        QStandardItem* projectItem = model->item(i, 0);
+        if (!projectItem) continue;
+        ui->comboBox->addItem(projectItem->text());
+        projectItem->setStatusTip(IN_PROCESS);
     }
 
     this->save_path = copy->item(0, 1)->text();
@@ -85,11 +102,12 @@ void SLC_deramp::ShowProjectList(QStandardItemModel* model)
     int count = 0;
     for (int i = 0; i < model->rowCount(); i++)
     {
-        if (model->item(i, 0)->rowCount() != 0)
+        QStandardItem* projectItem = model->item(i, 0);
+        if (projectItem && projectItem->rowCount() != 0)
         {
-            count = model->item(i, 0)->rowCount();
-            project = model->item(i, 0);
-            ui->comboBox->setCurrentIndex(i);
+            count = projectItem->rowCount();
+            project = projectItem;
+            ui->comboBox->setCurrentIndex(ui->comboBox->findText(projectItem->text()));
             break;
         }
 
@@ -106,12 +124,14 @@ void SLC_deramp::ShowProjectList(QStandardItemModel* model)
     ui->comboBox_dst_node->clear();
     for (int i = 0; i < count; i++)
     {
-        if (project->child(i, 1)->text() == QString("complex-2.0"))
+        QStandardItem* typeItem = project->child(i, 1);
+        QStandardItem* nameItem = project->child(i, 0);
+        if (typeItem && nameItem && typeItem->text() == QString("complex-2.0"))
         {
-            ui->comboBox_dst_node->addItem(project->child(i, 0)->text());
+            ui->comboBox_dst_node->addItem(nameItem->text());
             if (!isnodefound)
             {
-                node = project->child(i, 0);
+                node = nameItem;
                 isnodefound = true;
             }
 
@@ -146,8 +166,18 @@ void SLC_deramp::on_comboBox_currentIndexChanged()
     {
         bool isnodefound = false;
         QStandardItem* node = NULL;
-        QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
-        this->save_path = copy->item(project->row(), 1)->text();
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->currentText());
+        if (!project)
+        {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+            return;
+        }
+        QStandardItem* pathItem = copy->item(project->row(), 1);
+        if (!pathItem) {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("当前工程路径信息缺失，请重新打开工程。"));
+            return;
+        }
+        this->save_path = pathItem->text();
         ui->comboBox_dst_node->clear();
         for (int i = 0; i < project->rowCount(); i++)
         {
@@ -211,34 +241,6 @@ void SLC_deramp::ChangeVision(bool Editable)
 
 void SLC_deramp::on_comboBox_dst_node_currentIndexChanged()
 {
-   /* if (ui->comboBox_dst_node->count() > 0)
-    {
-        QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
-        QStandardItem* node = NULL;
-        QModelIndex pro_index = copy->indexFromItem(project);
-        for (int i = 0; i < project->rowCount(); i++)
-        {
-            QString temp = project->child(i, 0)->text();
-            if (project->child(i, 0)->text() == ui->comboBox_dst_node->currentText())
-            {
-                node = project->child(i, 0); break;
-            }
-        }
-
-        if (!node)
-        {
-            QMessageBox::warning(NULL, "Warning!", QStringLiteral("该节点无数据！"));
-            ui->comboBox_masterImage->clear();
-            return;
-        }
-        ui->comboBox_masterImage->clear();
-        int count = node->rowCount();
-        for (int i = 0; i < count; i++)
-        {
-            ui->comboBox_masterImage->addItem(node->child(i, 0)->text());
-        }
-        ui->comboBox_masterImage->setCurrentIndex(0);
-    }*/
 }
 
 void SLC_deramp::on_buttonBox_accepted()
@@ -246,16 +248,18 @@ void SLC_deramp::on_buttonBox_accepted()
     XMLFile xmldoc;
     TiXmlElement* pnode = NULL, * pchild = NULL;
     bool bFlag = false;
-    if (copy->item(ui->comboBox->currentIndex(), 0)->rowCount() == 0)
+    QStandardItem* project = NodeUtils::findFirstModelItem(this->copy, ui->comboBox->currentText());
+    if (!project)
+    {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+        return;
+    }
+    if (project->rowCount() == 0)
     {
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程下未检测到数据！请先导入图像或更换工程！"));
         return;
     }
     //防重名检查
-    QStandardItem* project = this->copy->findItems(ui->comboBox->currentText())[0];
-    if (!project) {
-        return;
-    }
     for (int i = 0; i < project->rowCount(); i++)
     {
         if (ui->lineEdit->text() == project->child(i)->text())

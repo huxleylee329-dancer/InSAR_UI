@@ -73,16 +73,20 @@ Interferometric_Formation::Interferometric_Formation(QWidget* parent) :
 }
 Interferometric_Formation::~Interferometric_Formation()
 {
-    Interferometric_Formation_worker = nullptr;
-    Interferometric_Formation_thread = nullptr;
+    StopThread();
     if (copy)
     {
         for (int i = 0; i < ui->comboBox->count(); i++)
         {
-            if (!copy->findItems(ui->comboBox->itemText(i)).isEmpty())
-                copy->findItems(ui->comboBox->itemText(i))[0]->setStatusTip(NOT_IN_PROCESS);
+            QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->itemText(i));
+            if (project)
+                project->setStatusTip(NOT_IN_PROCESS);
         }
     }
+    Interferometric_Formation_worker = nullptr;
+    Interferometric_Formation_thread = nullptr;
+    delete ui;
+    ui = nullptr;
 }
 
 void Interferometric_Formation::updateProcess(int value, QString information)
@@ -109,14 +113,16 @@ void Interferometric_Formation::endThread()
 }
 void Interferometric_Formation::StopThread()
 {
-    if (Interferometric_Formation_thread != nullptr)
+    if (Interferometric_Formation_worker)
+        Interferometric_Formation_worker->StopProcess();
+
+    QThread* workerThread = Interferometric_Formation_thread.data();
+    if (workerThread && workerThread->isRunning())
     {
-        if (Interferometric_Formation_thread->isRunning())
-        {
-            Interferometric_Formation_thread->requestInterruption();
-            Interferometric_Formation_thread->quit();
-            Interferometric_Formation_thread->wait();
-        }
+        workerThread->requestInterruption();
+        workerThread->quit();
+        if (QThread::currentThread() != workerThread)
+            workerThread->wait();
     }
 }
 void Interferometric_Formation::TransitModel(QStandardItemModel* model)
@@ -172,10 +178,18 @@ void Interferometric_Formation::ChangeVision(bool Editable)
 void Interferometric_Formation::ShowProjectList(QStandardItemModel* model)
 {
     this->copy = model;
+    if (!copy || copy->rowCount() < 1 || copy->columnCount() < 2 ||
+        !copy->item(0, 0) || !copy->item(0, 1))
+    {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("当前没有可用工程，请先新建或打开工程。"));
+        return;
+    }
     for (int i = 0; i < model->rowCount(); i++)
     {
-        ui->comboBox->addItem(model->item(i, 0)->text());
-        model->item(i, 0)->setStatusTip(IN_PROCESS);
+        QStandardItem* projectItem = model->item(i, 0);
+        if (!projectItem) continue;
+        ui->comboBox->addItem(projectItem->text());
+        projectItem->setStatusTip(IN_PROCESS);
     }
     this->save_path = copy->item(0, 1)->text();
     QStandardItem* project = NULL;
@@ -183,11 +197,12 @@ void Interferometric_Formation::ShowProjectList(QStandardItemModel* model)
     int count = 0;
     for (int i = 0; i < model->rowCount(); i++)
     {
-        if (model->item(i, 0)->rowCount() != 0)
+        QStandardItem* projectItem = model->item(i, 0);
+        if (projectItem && projectItem->rowCount() != 0)
         {
-            count = model->item(i, 0)->rowCount();
-            project = model->item(i, 0);
-            ui->comboBox->setCurrentIndex(i);
+            count = projectItem->rowCount();
+            project = projectItem;
+            ui->comboBox->setCurrentIndex(ui->comboBox->findText(projectItem->text()));
             break;
         }
 
@@ -196,17 +211,21 @@ void Interferometric_Formation::ShowProjectList(QStandardItemModel* model)
     {
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
         this->deleteLater();
+        return;
     }
     QModelIndex pro_index = model->indexFromItem(project);
     ui->comboBox_2->clear();
     for (int i = 0; i < count; i++)
     {
-        if (project->child(i, 1)->text().compare("complex-2.0") == 0 ||
-            project->child(i, 1)->text().compare("complex-3.0") == 0)
+        QStandardItem* typeItem = project->child(i, 1);
+        QStandardItem* nameItem = project->child(i, 0);
+        if (typeItem && nameItem &&
+            (typeItem->text().compare("complex-2.0") == 0 ||
+             typeItem->text().compare("complex-3.0") == 0))
         {
-            ui->comboBox_2->addItem(project->child(i, 0)->text());
+            ui->comboBox_2->addItem(nameItem->text());
             if (!node)
-                node = project->child(i, 0);
+                node = nameItem;
         }
             
     }
@@ -214,6 +233,7 @@ void Interferometric_Formation::ShowProjectList(QStandardItemModel* model)
     {
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("未检测到可处理数据，请先进行配准！"));
         this->deleteLater();
+        return;
     }
     ui->comboBox_2->setCurrentIndex(0);
     ui->comboBox_3->clear();
@@ -222,13 +242,16 @@ void Interferometric_Formation::ShowProjectList(QStandardItemModel* model)
         int children = node->rowCount();
         for (int i = 0; i < children; i++)
         {
-            ui->comboBox_3->addItem(node->child(i, 0)->text());
+            QStandardItem* imageItem = node->child(i, 0);
+            if (imageItem)
+                ui->comboBox_3->addItem(imageItem->text());
         }
     }
     else
     {
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("无配准后图像用于生成干涉相位，请先进行配准!"));
         this->deleteLater();
+        return;
     }
     ui->comboBox_3->setCurrentIndex(0);
 }
@@ -255,8 +278,18 @@ void Interferometric_Formation::on_comboBox_currentIndexChanged()
 {
     if (ui->comboBox->count() != 0)
     {
-        QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
-        this->save_path = copy->item(project->row(), 1)->text();
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->currentText());
+        if (!project)
+        {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+            return;
+        }
+        QStandardItem* pathItem = copy->item(project->row(), 1);
+        if (!pathItem) {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("当前工程路径信息缺失，请重新打开工程。"));
+            return;
+        }
+        this->save_path = pathItem->text();
         int count = project->rowCount();
         if (count != 0)
         {
@@ -309,7 +342,12 @@ void Interferometric_Formation::on_comboBox_2_currentIndexChanged()
 {
     if (ui->comboBox_2->count()!=0)
     {
-        QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->currentText());
+        if (!project)
+        {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+            return;
+        }
         //QString name = ui->comboBox_2->currentText();
         QStandardItem* node = NULL;
         int count = project->rowCount();

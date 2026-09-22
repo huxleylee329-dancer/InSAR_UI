@@ -3,6 +3,7 @@
 #include<qstandarditemmodel.h>
 #include "ui_InterferometricFormation.h"
 #include <QThread>
+#include <QPointer>
 
 class InterferometricFormationWorker;
 
@@ -26,8 +27,8 @@ signals:
 private:
     Ui::InterferometricFormation* ui;
     QStandardItemModel* copy;
-    InterferometricFormationWorker* Interferometric_Formation_worker;
-    QThread* Interferometric_Formation_thread;
+    QPointer<InterferometricFormationWorker> Interferometric_Formation_worker;
+    QPointer<QThread> Interferometric_Formation_thread;
     QString save_path;
     int image_number;
     void ChangeVision(bool Editable);

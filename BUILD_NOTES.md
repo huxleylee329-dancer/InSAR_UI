@@ -307,17 +307,6 @@ private:
 
 ---
 
-## 测试节点
-
-测试节点位于 `TestNodes.h` 和 `TestNodes.cpp`，用于验证编辑器框架。
-
-**禁用测试节点：** 在 `NodeModels.cpp` 中注释掉：
-```cpp
-// #define ENABLE_TEST_NODES
-```
-
----
-
 ## 节点编辑器使用说明
 
 1. **打开编辑器：** 菜单 → 节点编辑器
@@ -374,11 +363,9 @@ D:\SRC\InSAR_UI\
 │   ├── QtNodes\internal\      # QtNodes 头文件
 │   ├── NodeEditorWindow.h     # 节点编辑器窗口
 │   ├── NodeDataTypes.h        # 自定义数据类型
-│   ├── NodeModels.h           # 节点模型注册表
-│   └── TestNodes.h           # 测试节点
+│   └── NodeModels.h           # 节点模型注册表
 ├── NodeEditorWindow.cpp
 ├── NodeModels.cpp
-├── TestNodes.cpp
 ├── qrc_SatExplorer.cpp  # 手动生成的资源文件
 ├── resources\
 │   └── SatExplorer.qrc

@@ -84,12 +84,14 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <PostBuildEvent>
-      <Command>copy /Y "$(ProjectDir)resources\certs\curl-ca-bundle.crt" "$(TargetDir)curl-ca-bundle.crt"</Command>
+      <Command>copy /Y "$(ProjectDir)resources\certs\curl-ca-bundle.crt" "$(TargetDir)curl-ca-bundle.crt"
+copy /Y "$(ProjectDir)sar_ship_model_v2.onnx" "$(TargetDir)sar_ship_model_v2.onnx"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <PostBuildEvent>
-      <Command>copy /Y "$(ProjectDir)resources\certs\curl-ca-bundle.crt" "$(TargetDir)curl-ca-bundle.crt"</Command>
+      <Command>copy /Y "$(ProjectDir)resources\certs\curl-ca-bundle.crt" "$(TargetDir)curl-ca-bundle.crt"
+copy /Y "$(ProjectDir)sar_ship_model_v2.onnx" "$(TargetDir)sar_ship_model_v2.onnx"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
@@ -314,9 +316,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="InSARLogManager.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="TestNodes.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ImportNodeBase.cpp">
@@ -1039,9 +1038,6 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\DockWidgets.h">
-      <Filter>Header Files</Filter>
-    </QtMoc>
-    <QtMoc Include="include\TestNodes.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\ImportNodeBase.h">

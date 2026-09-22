@@ -579,10 +579,18 @@ void SpeckleDenoiseNode::publishResultsToProjectTree(const QStringList& outputNa
                                                       const QStringList& outputPaths)
 {
     QStandardItemModel* model = projectModel();
-    if (!model) return;
+    if (!model) {
+        InSARLogManager::LogWarning("SpeckleDenoiseNode",
+            QStringLiteral("处理完成后项目模型不可用，已跳过项目树发布。"));
+        return;
+    }
 
-    QStandardItem* projectItem = model->findItems(projectName()).isEmpty() ? nullptr : model->findItems(projectName()).first();
-    if (!projectItem) return;
+    QStandardItem* projectItem = NodeUtils::findFirstModelItem(model, projectName());
+    if (!projectItem) {
+        InSARLogManager::LogWarning("SpeckleDenoiseNode",
+            QStringLiteral("处理完成后未找到工程“%1”，已跳过项目树发布。").arg(projectName()));
+        return;
+    }
 
     const QString nodeName = m_outputNodeName.trimmed().isEmpty() ? QStringLiteral("Denoise") : m_outputNodeName.trimmed();
 

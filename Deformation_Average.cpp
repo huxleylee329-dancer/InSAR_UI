@@ -31,8 +31,8 @@ Deformation_Average::~Deformation_Average()
     {
         for (int i = 0; i < ui->comboBox->count(); i++)
         {
-            if (!copy->findItems(ui->comboBox->itemText(i)).isEmpty())
-                copy->findItems(ui->comboBox->itemText(i))[0]->setStatusTip(NOT_IN_PROCESS);
+            if (QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->itemText(i)))
+                project->setStatusTip(NOT_IN_PROCESS);
         }
     }
 }
@@ -48,20 +48,31 @@ void Deformation_Average::cancelled()
 void Deformation_Average::ShowProjectList(QStandardItemModel* model)
 {
     this->copy = model;
+    ui->comboBox->clear();
+    ui->comboBox_2->clear();
+    if (!model || model->rowCount() < 1 || model->columnCount() < 2 ||
+        !model->item(0, 0) || !model->item(0, 1))
+    {
+        this->save_path.clear();
+        return;
+    }
     for (int i = 0; i < model->rowCount(); i++)
     {
-        ui->comboBox->addItem(model->item(i, 0)->text());
-        model->item(i, 0)->setStatusTip(IN_PROCESS);
+        QStandardItem* projectItem = model->item(i, 0);
+        if (!projectItem) continue;
+        ui->comboBox->addItem(projectItem->text());
+        projectItem->setStatusTip(IN_PROCESS);
     }
     this->save_path = copy->item(0, 1)->text();
     QStandardItem* project = NULL;
     int count = 0;
     for (int i = 0; i < model->rowCount(); i++)
     {
-        if (model->item(i, 0)->rowCount() != 0)
+        QStandardItem* projectItem = model->item(i, 0);
+        if (projectItem && projectItem->rowCount() != 0)
         {
-            count = model->item(i, 0)->rowCount();
-            project = model->item(i, 0);
+            count = projectItem->rowCount();
+            project = projectItem;
             ui->comboBox->setCurrentIndex(i);
             break;
         }
@@ -71,9 +82,9 @@ void Deformation_Average::ShowProjectList(QStandardItemModel* model)
     {
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
         this->deleteLater();
+        return;
     }
     QModelIndex pro_index = model->indexFromItem(project);
-    ui->comboBox_2->clear();
     for (int i = 0; i < count; i++)
     {
         if (model->data(model->index(i, 1, pro_index)).toString().compare("SBAS-1.0") == 0)
@@ -112,8 +123,14 @@ void Deformation_Average::on_comboBox_currentIndexChanged()
     if (ui->comboBox->count() != 0)
     {
         //this->save_path = copy->item(ui->comboBox->currentIndex(), 1)->text();
-        QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
-        this->save_path = copy->item(project->row(), 1)->text();
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->currentText());
+        if (!project) {
+            ui->comboBox_2->clear();
+            QMessageBox::warning(this, "Warning!", QStringLiteral("未找到当前工程，请刷新工程列表后重试。"));
+            return;
+        }
+        QStandardItem* pathItem = copy->item(project->row(), 1);
+        this->save_path = pathItem ? pathItem->text() : QString();
         QModelIndex pro_index = copy->indexFromItem(project);
         int count = project->rowCount();
         ui->comboBox_2->clear();
@@ -131,12 +148,18 @@ void Deformation_Average::on_comboBox_2_currentIndexChanged()
 {
     if (ui->comboBox_2->count() != 0)
     {
-        QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->currentText());
+        if (!project) {
+            image_number = 0;
+            QMessageBox::warning(this, "Warning!", QStringLiteral("未找到当前工程，请刷新工程列表后重试。"));
+            return;
+        }
         QModelIndex pro_index = copy->indexFromItem(project);
         for (int i = 0; i < project->rowCount(); i++)
         {
-            if (project->child(i, 0)->text() == ui->comboBox_2->currentText())
-                image_number = project->child(i, 0)->rowCount();
+            QStandardItem* childItem = project->child(i, 0);
+            if (childItem && childItem->text() == ui->comboBox_2->currentText())
+                image_number = childItem->rowCount();
         }
     }
 
@@ -147,25 +170,40 @@ void Deformation_Average::on_comboBox_2_currentIndexChanged()
 void Deformation_Average::on_Preview_pressed()
 {
     if (isPreviewPressed) return;
+    QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->currentText());
+    if (!project) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("未找到当前工程，请刷新工程列表后重试。"));
+        return;
+    }
     isPreviewPressed = true;
     ui->Preview->setDisabled(true);
     ui->Preview->setText(QStringLiteral("正在查看..."));
     ui->Preview->repaint();
-    QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
     QString image_name;
     QString image_path;
     QString jpg_path;
     QFileInfo fileinfo;
     for (int i = 0; i < project->rowCount(); i++)
     {
-        if (project->child(i, 0)->text() == ui->comboBox_2->currentText())
+        QStandardItem* nodeItem = project->child(i, 0);
+        if (nodeItem && nodeItem->text() == ui->comboBox_2->currentText())
         {
-            image_name = project->child(i, 0)->child(0, 0)->text();
-            image_path = project->child(i, 0)->child(0, 1)->text();
+            QStandardItem* nameItem = nodeItem->child(0, 0);
+            QStandardItem* pathItem = nodeItem->child(0, 1);
+            if (!nameItem || !pathItem)
+                break;
+            image_name = nameItem->text();
+            image_path = pathItem->text();
             fileinfo = QFileInfo(image_path);
             jpg_path = QString("%1%2%3%4").arg(fileinfo.absolutePath()).arg("/").arg(image_name).arg(".jpg");
             break;
         }
+    }
+    if (image_name.isEmpty() || image_path.isEmpty())
+    {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("所选节点的图像数据不完整，无法查看。"));
+        cancelled();
+        return;
     }
     if (QFile::exists(jpg_path))
     {

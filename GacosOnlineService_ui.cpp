@@ -7,6 +7,7 @@
 #include <FormatConversion.h>
 #include "icon_source.h"
 #include "NodeUtils.h"
+#include "InSARLogManager.h"
 
 GacosOnlineService_ui::GacosOnlineService_ui(QWidget* parent) :
     QWidget(parent),
@@ -28,8 +29,8 @@ GacosOnlineService_ui::~GacosOnlineService_ui()
     {
         for (int i = 0; i < ui->comboBox->count(); i++)
         {
-            if (!copy->findItems(ui->comboBox->itemText(i)).isEmpty())
-                copy->findItems(ui->comboBox->itemText(i))[0]->setStatusTip(NOT_IN_PROCESS);
+            if (QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->itemText(i)))
+                project->setStatusTip(NOT_IN_PROCESS);
         }
     }
 }
@@ -80,23 +81,32 @@ void GacosOnlineService_ui::ChangeVision(bool Editable)
 
 void GacosOnlineService_ui::ShowProjectList(QStandardItemModel* model)
 {
-    if (!model) return;
-    if (model->rowCount() < 1) return;
     this->copy = model;
+    ui->comboBox->clear();
+    ui->comboBox_2->clear();
+    if (!model || model->rowCount() < 1 || model->columnCount() < 2 ||
+        !model->item(0, 0) || !model->item(0, 1))
+    {
+        this->save_path.clear();
+        return;
+    }
     for (int i = 0; i < model->rowCount(); i++)
     {
-        ui->comboBox->addItem(model->item(i, 0)->text());
-        model->item(i, 0)->setStatusTip(IN_PROCESS);
+        QStandardItem* projectItem = model->item(i, 0);
+        if (!projectItem) continue;
+        ui->comboBox->addItem(projectItem->text());
+        projectItem->setStatusTip(IN_PROCESS);
     }
     this->save_path = copy->item(0, 1)->text();
     QStandardItem* project = nullptr;
     int count = 0;
     for (int i = 0; i < model->rowCount(); i++)
     {
-        if (model->item(i, 0)->rowCount() != 0)
+        QStandardItem* projectItem = model->item(i, 0);
+        if (projectItem && projectItem->rowCount() != 0)
         {
-            count = model->item(i, 0)->rowCount();
-            project = model->item(i, 0);
+            count = projectItem->rowCount();
+            project = projectItem;
             ui->comboBox->setCurrentIndex(i);
             break;
         }
@@ -108,7 +118,6 @@ void GacosOnlineService_ui::ShowProjectList(QStandardItemModel* model)
         return;
     }
     QModelIndex pro_index = model->indexFromItem(project);
-    ui->comboBox_2->clear();
     for (int i = 0; i < count; i++)
     {
         QString typeTag = model->data(model->index(i, 1, pro_index)).toString();
@@ -128,8 +137,14 @@ void GacosOnlineService_ui::on_comboBox_currentIndexChanged()
 {
     if (ui->comboBox->count() != 0)
     {
-        QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
-        this->save_path = copy->item(project->row(), 1)->text();
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->currentText());
+        if (!project) {
+            ui->comboBox_2->clear();
+            QMessageBox::warning(this, "Warning!", QStringLiteral("未找到当前工程，请刷新工程列表后重试。"));
+            return;
+        }
+        QStandardItem* pathItem = copy->item(project->row(), 1);
+        this->save_path = pathItem ? pathItem->text() : QString();
         QModelIndex pro_index = copy->indexFromItem(project);
         int count = project->rowCount();
         ui->comboBox_2->clear();
@@ -180,12 +195,14 @@ void GacosOnlineService_ui::on_buttonBox_accepted()
         return;
     }
 
-    const QList<QStandardItem*> projects = copy ? copy->findItems(ui->comboBox->currentText()) : QList<QStandardItem*>();
-    if (projects.isEmpty())
+    QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->currentText());
+    if (!project) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("未找到当前工程，请刷新工程列表后重试。"));
         return;
+    }
     QStandardItem* inputNode = nullptr;
-    for (int i = 0; i < projects.first()->rowCount(); ++i) {
-        QStandardItem* node = projects.first()->child(i, 0);
+    for (int i = 0; i < project->rowCount(); ++i) {
+        QStandardItem* node = project->child(i, 0);
         if (node && node->text() == ui->comboBox_2->currentText()) {
             inputNode = node;
             break;
@@ -244,18 +261,21 @@ void GacosOnlineService_ui::handleResults(
     if (outputNames.size() != outputPaths.size())
         return;
 
-    const QList<QStandardItem*> projects = copy ? copy->findItems(projectName) : QList<QStandardItem*>();
-    if (!projects.isEmpty()) {
-        QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
-            projects.first(), dstNode, "phase-2.5", FOLDER_ICON);
-        if (outputNode) {
-            outputNode->setToolTip(projectName);
-            for (int i = 0; i < outputPaths.size(); ++i) {
-                QStandardItem* item = NodeUtils::findOrCreateChildItem(
-                    outputNode, outputNames[i], "phase", outputPaths[i], IMAGEDATA_ICON);
-                if (item) {
-                    outputNode->setChild(item->row(), 1, new QStandardItem(outputPaths[i]));
-                }
+    QStandardItem* project = NodeUtils::findFirstModelItem(copy, projectName);
+    if (!project) {
+        InSARLogManager::LogError("GacosOnlineService_ui",
+            QStringLiteral("处理完成后未找到工程“%1”，已跳过结果发布。").arg(projectName));
+        return;
+    }
+    QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
+        project, dstNode, "phase-2.5", FOLDER_ICON);
+    if (outputNode) {
+        outputNode->setToolTip(projectName);
+        for (int i = 0; i < outputPaths.size(); ++i) {
+            QStandardItem* item = NodeUtils::findOrCreateChildItem(
+                outputNode, outputNames[i], "phase", outputPaths[i], IMAGEDATA_ICON);
+            if (item) {
+                outputNode->setChild(item->row(), 1, new QStandardItem(outputPaths[i]));
             }
         }
     }

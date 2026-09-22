@@ -21,6 +21,7 @@ class IApplicationInterface;
 class XMLFile;
 
 class QStandardItem;
+class QStandardItemModel;
 class QThread;
 
 namespace QtNodes {
@@ -523,6 +524,16 @@ bool isJpgPreviewCurrent(const QString& h5Path, const QString& jpgPath);
  * @return 是否生成成功
  */
 bool generateJpgPreviewFromH5WithProgress(const QString& h5Path, const QString& jpgPath, const QString& type, std::function<void(int, int)> cb);
+
+/**
+ * @brief 在项目模型指定列中精确查找首个匹配项
+ * @return 模型为空、文本为空或未找到匹配项时返回 nullptr
+ */
+QStandardItem* findFirstModelItem(
+    QStandardItemModel* model,
+    const QString& text,
+    int column = 0
+);
 
 /**
  * @brief 查找或创建项目树节点，并根据 Rank 自动排序插入

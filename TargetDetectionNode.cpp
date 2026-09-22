@@ -12,6 +12,7 @@
 #include <QLabel>
 #include <QComboBox>
 #include <QLineEdit>
+#include <QSignalBlocker>
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QPushButton>
@@ -180,8 +181,21 @@ void TargetDetectionNode::createWidget()
     auto* modelLayout = new QHBoxLayout();
     modelLayout->addWidget(new QLabel(QStringLiteral("模型选择：")));
     m_modelComboBox = new QComboBox();
-    m_modelComboBox->addItem("SAR Ship Model 0429", NodeUtils::getModelPath("sar_ship_model0429.onnx"));
+    m_modelComboBox->addItem("SAR Ship Model V2 (8D, recommended)",
+                             NodeUtils::getModelPath("sar_ship_model_v2.onnx"));
+    m_modelComboBox->setItemData(0, 0.658, Qt::UserRole + 1);
+    m_modelComboBox->addItem("SAR Ship Model 0429 (legacy 5D)",
+                             NodeUtils::getModelPath("sar_ship_model0429.onnx"));
+    m_modelComboBox->setItemData(1, 0.65, Qt::UserRole + 1);
+    const bool hasRestoredModel = !m_selectedModelPath.isEmpty();
+    if (hasRestoredModel) {
+        const int restoredIndex = m_modelComboBox->findData(m_selectedModelPath);
+        if (restoredIndex >= 0) m_modelComboBox->setCurrentIndex(restoredIndex);
+    }
     m_selectedModelPath = m_modelComboBox->currentData().toString();
+    if (!hasRestoredModel) {
+        m_thresholdValue = m_modelComboBox->currentData(Qt::UserRole + 1).toFloat();
+    }
     // Helper to invalidate node state when parameters change
     auto invalidateNodeData = [this]() {
         if (m_outputData) m_outputData.reset();
@@ -200,6 +214,11 @@ void TargetDetectionNode::createWidget()
                 return;
             }
             m_selectedModelPath = newPath;
+            m_thresholdValue =
+                m_modelComboBox->currentData(Qt::UserRole + 1).toFloat();
+            if (m_thresholdEdit) {
+                m_thresholdEdit->setText(QString::number(m_thresholdValue, 'f', 3));
+            }
             invalidateNodeData();
         }
     });
@@ -210,7 +229,7 @@ void TargetDetectionNode::createWidget()
     auto* confLayout = new QHBoxLayout();
     confLayout->addWidget(new QLabel(QStringLiteral("置信度：")));
     m_thresholdEdit = new QLineEdit();
-    m_thresholdEdit->setText(QString::number(m_thresholdValue, 'f', 2));
+    m_thresholdEdit->setText(QString::number(m_thresholdValue, 'f', 3));
     connect(m_thresholdEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
         bool ok;
         float val = m_thresholdEdit->text().toFloat(&ok);
@@ -598,6 +617,7 @@ QJsonObject TargetDetectionNode::save() const
 {
     QJsonObject modelJson = ExecutableNodeDelegateModel::save();
     modelJson["thresholdValue"] = m_thresholdValue;
+    modelJson["modelFileName"] = QFileInfo(m_selectedModelPath).fileName();
     modelJson["isExpanded"] = m_isExpanded;
 
     QJsonArray resultsArray;
@@ -637,8 +657,16 @@ void TargetDetectionNode::prepareForPaste(QJsonObject& json,
 
 void TargetDetectionNode::load(QJsonObject const &json)
 {
-    // Assign fields first
-    m_thresholdValue = json["thresholdValue"].toDouble(0.65);
+    // Projects saved before modelFileName existed used the legacy five-feature
+    // model, so keep that behavior when loading an older workflow.
+    QString modelFileName = json["modelFileName"].toString();
+    if (modelFileName.isEmpty()) {
+        modelFileName = QStringLiteral("sar_ship_model0429.onnx");
+    }
+    m_selectedModelPath = NodeUtils::getModelPath(modelFileName);
+    const double defaultThreshold =
+        modelFileName == QStringLiteral("sar_ship_model_v2.onnx") ? 0.658 : 0.65;
+    m_thresholdValue = json["thresholdValue"].toDouble(defaultThreshold);
     m_isExpanded = json["isExpanded"].toBool(false);
 
     m_savedResults.clear();
@@ -666,7 +694,14 @@ void TargetDetectionNode::load(QJsonObject const &json)
     ExecutableNodeDelegateModel::load(json);
 
     if (m_thresholdEdit) {
-        m_thresholdEdit->setText(QString::number(m_thresholdValue, 'f', 2));
+        m_thresholdEdit->setText(QString::number(m_thresholdValue, 'f', 3));
+    }
+    if (m_modelComboBox) {
+        const int restoredIndex = m_modelComboBox->findData(m_selectedModelPath);
+        if (restoredIndex >= 0) {
+            QSignalBlocker blocker(m_modelComboBox);
+            m_modelComboBox->setCurrentIndex(restoredIndex);
+        }
     }
 
     if (m_resultsTable) {

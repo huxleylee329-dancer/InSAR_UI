@@ -181,12 +181,17 @@ void DEMSourceDialog::ShowProjectList(QStandardItemModel* model)
 {
     m_model = model;
     m_projectCombo->clear();
-    
+    m_slcCombo->clear();
+    if (!model || model->rowCount() < 1 || model->columnCount() < 2) return;
+
     for (int i = 0; i < model->rowCount(); ++i) {
-        m_projectCombo->addItem(model->item(i, 0)->text());
+        QStandardItem* projectItem = model->item(i, 0);
+        QStandardItem* pathItem = model->item(i, 1);
+        if (!projectItem || !pathItem) continue;
+        m_projectCombo->addItem(projectItem->text(), i);
     }
 
-    if (model->rowCount() > 0) {
+    if (m_projectCombo->count() > 0) {
         onProjectChanged(0);
     }
 }
@@ -197,7 +202,9 @@ void DEMSourceDialog::onProjectChanged(int index)
     updateSlcCombo();
 
     if (m_model && m_projectCombo->currentIndex() >= 0) {
-        int projIdx = m_projectCombo->currentIndex();
+        bool rowOk = false;
+        const int projIdx = m_projectCombo->currentData().toInt(&rowOk);
+        if (!rowOk || projIdx < 0 || projIdx >= m_model->rowCount()) return;
         QStandardItem* pathItem = m_model->item(projIdx, 1);
         if (pathItem) {
             QString projectPath = pathItem->text();
@@ -222,7 +229,9 @@ void DEMSourceDialog::updateSlcCombo()
         return;
     }
 
-    int projIdx = m_projectCombo->currentIndex();
+    bool rowOk = false;
+    const int projIdx = m_projectCombo->currentData().toInt(&rowOk);
+    if (!rowOk || projIdx < 0 || projIdx >= m_model->rowCount()) return;
     QStandardItem* projectItem = m_model->item(projIdx, 0);
     if (!projectItem) {
         return;
@@ -230,10 +239,11 @@ void DEMSourceDialog::updateSlcCombo()
 
     for (int i = 0; i < projectItem->rowCount(); ++i) {
         QStandardItem* typeItem = projectItem->child(i, 1);
-        if (typeItem) {
+        QStandardItem* childItem = projectItem->child(i, 0);
+        if (childItem && typeItem) {
             QString typeText = typeItem->text();
             if (typeText == "complex-0.0" || typeText == "complex-1.0" || typeText == "complex-2.0") {
-                m_slcCombo->addItem(projectItem->child(i, 0)->text());
+                m_slcCombo->addItem(childItem->text());
             }
         }
     }
@@ -241,7 +251,8 @@ void DEMSourceDialog::updateSlcCombo()
 
 void DEMSourceDialog::onStartPressed()
 {
-    if (m_projectCombo->currentIndex() < 0 || m_slcCombo->currentIndex() < 0) {
+    if (!m_model || m_model->columnCount() < 2 ||
+        m_projectCombo->currentIndex() < 0 || m_slcCombo->currentIndex() < 0) {
         QMessageBox::warning(this, "Warning", QStringLiteral("请确保选中了有效的工程和参考 SLC 影像！"));
         return;
     }
@@ -252,7 +263,12 @@ void DEMSourceDialog::onStartPressed()
         return;
     }
 
-    int projIdx = m_projectCombo->currentIndex();
+    bool rowOk = false;
+    const int projIdx = m_projectCombo->currentData().toInt(&rowOk);
+    if (!rowOk || projIdx < 0 || projIdx >= m_model->rowCount()) {
+        QMessageBox::warning(this, "Warning", QStringLiteral("所选工程已失效，请刷新工程列表后重试！"));
+        return;
+    }
     QStandardItem* projectItem = m_model->item(projIdx, 0);
     QStandardItem* pathItem = m_model->item(projIdx, 1);
     if (!projectItem || !pathItem) {
@@ -266,8 +282,9 @@ void DEMSourceDialog::onStartPressed()
     QString slcNodeName = m_slcCombo->currentText();
     QStandardItem* slcNode = nullptr;
     for (int i = 0; i < projectItem->rowCount(); ++i) {
-        if (projectItem->child(i, 0)->text() == slcNodeName) {
-            slcNode = projectItem->child(i, 0);
+        QStandardItem* childItem = projectItem->child(i, 0);
+        if (childItem && childItem->text() == slcNodeName) {
+            slcNode = childItem;
             break;
         }
     }
@@ -612,9 +629,10 @@ bool DEMSourceDialog::commitOutputTransaction(const QString& stagedH5Path,
             QStandardItem* demNode = nullptr;
             for (int i = 0; i < project->rowCount(); ++i)
             {
-                if (project->child(i, 0)->text() == m_preparedDstNode)
+                QStandardItem* childItem = project->child(i, 0);
+                if (childItem && childItem->text() == m_preparedDstNode)
                 {
-                    demNode = project->child(i, 0);
+                    demNode = childItem;
                     break;
                 }
             }
@@ -627,7 +645,8 @@ bool DEMSourceDialog::commitOutputTransaction(const QString& stagedH5Path,
                 int insertIndex = 0;
                 for (; insertIndex < project->rowCount(); ++insertIndex)
                 {
-                    QString t = project->child(insertIndex, 1)->text();
+                    QStandardItem* rankItem = project->child(insertIndex, 1);
+                    const QString t = rankItem ? rankItem->text() : QString();
                     if (t == "complex-0.0" || t == "complex-1.0" || t == "complex-2.0" ||
                         t == "phase-1.0" || t == "phase-2.0" || t == "phase-3.0" || t == "dem-1.0")
                     {
@@ -643,9 +662,10 @@ bool DEMSourceDialog::commitOutputTransaction(const QString& stagedH5Path,
             QString imgName = m_preparedDstNode + "_dem";
             for (int j = 0; j < demNode->rowCount(); ++j)
             {
-                if (demNode->child(j, 0)->text() == imgName)
+                QStandardItem* childItem = demNode->child(j, 0);
+                if (childItem && childItem->text() == imgName)
                 {
-                    itemImg = demNode->child(j, 0);
+                    itemImg = childItem;
                     break;
                 }
             }

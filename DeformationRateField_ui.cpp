@@ -55,18 +55,20 @@ void DeformationRateField_ui::ShowProjectList(QStandardItemModel* model)
 {
     this->copy = model;
     ui->comboBox_project->clear();
+    ui->comboBox_srcNode->clear();
+    this->save_path.clear();
+    if (!model || model->rowCount() < 1 || model->columnCount() < 2) return;
+
     for (int i = 0; i < model->rowCount(); i++)
     {
-        ui->comboBox_project->addItem(model->item(i, 0)->text());
-        model->item(i, 0)->setStatusTip(IN_PROCESS);
+        QStandardItem* projectItem = model->item(i, 0);
+        QStandardItem* pathItem = model->item(i, 1);
+        if (!projectItem || !pathItem) continue;
+        ui->comboBox_project->addItem(projectItem->text());
+        projectItem->setStatusTip(IN_PROCESS);
     }
 
-    if (model->rowCount() == 0) {
-        QMessageBox::warning(this, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
-        ui->comboBox_srcNode->clear();
-        return;
-    }
-
+    if (ui->comboBox_project->count() < 1) return;
     updateSrcNodeCombo();
 }
 
@@ -83,12 +85,14 @@ void DeformationRateField_ui::updateSrcNodeCombo()
     auto items = copy->findItems(ui->comboBox_project->currentText());
     if (items.isEmpty() || !items[0]) return;
     QStandardItem* project = items[0];
-    this->save_path = copy->item(project->row(), 1)->text();
+    QStandardItem* pathItem = copy->item(project->row(), 1);
+    if (!pathItem) return;
+    this->save_path = pathItem->text();
 
     for (int i = 0; i < project->rowCount(); i++) {
         QStandardItem* child_col0 = project->child(i, 0);
         QStandardItem* child_col1 = project->child(i, 1);
-        if (child_col1 && child_col1->text() == "SBAS-1.0") {
+        if (child_col0 && child_col1 && child_col1->text() == "SBAS-1.0") {
             for (int j = 0; j < child_col0->rowCount(); ++j) {
                 QStandardItem* leaf_col0 = child_col0->child(j, 0);
                 if (leaf_col0) {
@@ -312,7 +316,8 @@ void DeformationRateField_ui::on_buttonBox_accepted()
     }
 
     for (int i = 0; i < project_item->rowCount(); i++) {
-        if (ui->lineEdit_dstNode->text() == project_item->child(i)->text()) {
+        QStandardItem* childItem = project_item->child(i, 0);
+        if (childItem && ui->lineEdit_dstNode->text() == childItem->text()) {
             QMessageBox::warning(this, "Warning!", QStringLiteral("目标节点已存在，请重命名！"));
             return;
         }
@@ -325,7 +330,12 @@ void DeformationRateField_ui::on_buttonBox_accepted()
     }
 
     m_activeProjectName = ui->comboBox_project->currentText();
-    m_activeProjectPath = copy->item(project_item->row(), 1)->text();
+    QStandardItem* projectPathItem = copy->item(project_item->row(), 1);
+    if (!projectPathItem || projectPathItem->text().isEmpty()) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("当前工程路径信息缺失，请重新打开工程！"));
+        return;
+    }
+    m_activeProjectPath = projectPathItem->text();
     m_activeProjectRoot = m_activeProjectPath;
     if (m_activeProjectRoot.endsWith(".insar", Qt::CaseInsensitive)) {
         m_activeProjectRoot = QFileInfo(m_activeProjectRoot).absolutePath();

@@ -193,9 +193,6 @@
     <ClCompile Include="InSARLogManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="TestNodes.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="ImportNodeBase.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1135,9 +1132,6 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\SLC_deramp.h">
-      <Filter>Header Files</Filter>
-    </QtMoc>
-    <QtMoc Include="include\TestNodes.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\TSXBatchImportNode.h">

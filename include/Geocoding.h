@@ -3,6 +3,7 @@
 #include<qstandarditemmodel.h>
 #include "ui_Geocoding.h"
 #include "GeocodingWorker.h"
+#include <QPointer>
 
 class Geocoding : public QWidget
 {
@@ -23,12 +24,12 @@ signals:
     void sendCopy(QStandardItemModel*);
 
 private:
-    Ui::Geocoding* ui;
-    QStandardItemModel* copy;
-    GeocodingWorker* Geocoding_thread;
+    Ui::Geocoding* ui = nullptr;
+    QStandardItemModel* copy = nullptr;
+    QPointer<GeocodingWorker> Geocoding_thread;
     QString save_path;
     QString projectFile;
-    int image_number;
+    int image_number = 0;
     void ChangeVision(bool Editable);
     bool buildInputSnapshot(QStandardItem* project, const QString& srcNodeName, int type,
         const QString& projectPath, QStringList& inputPaths, QString& productLevel, int& masterIndex) const;

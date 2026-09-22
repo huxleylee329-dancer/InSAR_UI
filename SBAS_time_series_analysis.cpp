@@ -12,6 +12,7 @@
 #include<QDir>
 #include<QThread>
 #include "NodeUtils.h"
+#include "InSARLogManager.h"
 #include "tinyxml.h"
 #include <FormatConversion.h>
 SBAS_time_series_analysis::SBAS_time_series_analysis(QWidget* parent) :
@@ -57,10 +58,8 @@ SBAS_time_series_analysis::~SBAS_time_series_analysis()
     StopThread();
     if (copy)
     {
-        const QList<QStandardItem*> projects = copy->findItems(ui->comboBox_project->currentText());
-        if (!projects.isEmpty() && projects.first()) {
-            projects.first()->setStatusTip(NOT_IN_PROCESS);
-        }
+        if (QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox_project->currentText()))
+            project->setStatusTip(NOT_IN_PROCESS);
     }
     emit sendCopy(copy);
     SBAS_time_series_analysis_thread = NULL;
@@ -115,10 +114,20 @@ void SBAS_time_series_analysis::TransitModel(QStandardItemModel* model)
 void SBAS_time_series_analysis::ShowProjectList(QStandardItemModel* model)
 {
     this->copy = model;
+    ui->comboBox_project->clear();
+    ui->comboBox_srcNode->clear();
+    if (!model || model->rowCount() < 1 || model->columnCount() < 2 ||
+        !model->item(0, 0) || !model->item(0, 1))
+    {
+        this->save_path.clear();
+        return;
+    }
     for (int i = 0; i < model->rowCount(); i++)
     {
-        ui->comboBox_project->addItem(model->item(i, 0)->text());
-        model->item(i, 0)->setStatusTip(IN_PROCESS);
+        QStandardItem* projectItem = model->item(i, 0);
+        if (!projectItem) continue;
+        ui->comboBox_project->addItem(projectItem->text());
+        projectItem->setStatusTip(IN_PROCESS);
     }
 
     this->save_path = copy->item(0, 1)->text();
@@ -126,10 +135,11 @@ void SBAS_time_series_analysis::ShowProjectList(QStandardItemModel* model)
     int count = 0;
     for (int i = 0; i < model->rowCount(); i++)
     {
-        if (model->item(i, 0)->rowCount() != 0)
+        QStandardItem* projectItem = model->item(i, 0);
+        if (projectItem && projectItem->rowCount() != 0)
         {
-            count = model->item(i, 0)->rowCount();
-            project = model->item(i, 0);
+            count = projectItem->rowCount();
+            project = projectItem;
             ui->comboBox_project->setCurrentIndex(i);
             break;
         }
@@ -143,15 +153,16 @@ void SBAS_time_series_analysis::ShowProjectList(QStandardItemModel* model)
     }
     QStandardItem* node = NULL;
     bool isnodefound = false;
-    ui->comboBox_srcNode->clear();
     for (int i = 0; i < count; i++)
     {
-        if (project->child(i, 1)->text() == QString("complex-3.0"))
+        QStandardItem* typeItem = project->child(i, 1);
+        QStandardItem* nameItem = project->child(i, 0);
+        if (typeItem && nameItem && typeItem->text() == QString("complex-3.0"))
         {
-            ui->comboBox_srcNode->addItem(project->child(i, 0)->text());
+            ui->comboBox_srcNode->addItem(nameItem->text());
             if (!isnodefound)
             {
-                node = project->child(i, 0);
+                node = nameItem;
                 isnodefound = true;
             }
 
@@ -171,17 +182,25 @@ void SBAS_time_series_analysis::on_comboBox_project_currentIndexChanged()
     {
         bool isnodefound = false;
         QStandardItem* node = NULL;
-        QStandardItem* project = copy->findItems(ui->comboBox_project->currentText())[0];
-        this->save_path = copy->item(project->row(), 1)->text();
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox_project->currentText());
+        if (!project) {
+            ui->comboBox_srcNode->clear();
+            QMessageBox::warning(this, "Warning!", QStringLiteral("未找到当前工程，请刷新工程列表后重试。"));
+            return;
+        }
+        QStandardItem* pathItem = copy->item(project->row(), 1);
+        this->save_path = pathItem ? pathItem->text() : QString();
         ui->comboBox_srcNode->clear();
         for (int i = 0; i < project->rowCount(); i++)
         {
-            if (project->child(i, 1)->text() == QString("complex-3.0"))
+            QStandardItem* nameItem = project->child(i, 0);
+            QStandardItem* rankItem = project->child(i, 1);
+            if (nameItem && rankItem && rankItem->text() == QString("complex-3.0"))
             {
-                ui->comboBox_srcNode->addItem(project->child(i, 0)->text());
+                ui->comboBox_srcNode->addItem(nameItem->text());
                 if (!isnodefound)
                 {
-                    node = project->child(i, 0);
+                    node = nameItem;
                     isnodefound = true;
                 }
 
@@ -250,15 +269,19 @@ void SBAS_time_series_analysis::on_comboBox_srcNode_currentIndexChanged()
     
     if (ui->comboBox_srcNode->count() > 0)
     {
-        QStandardItem* project = copy->findItems(ui->comboBox_project->currentText())[0];
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox_project->currentText());
+        if (!project) {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("未找到当前工程，请刷新工程列表后重试。"));
+            return;
+        }
         QStandardItem* node = NULL;
         QModelIndex pro_index = copy->indexFromItem(project);
         for (int i = 0; i < project->rowCount(); i++)
         {
-            QString temp = project->child(i, 0)->text();
-            if (project->child(i, 0)->text() == ui->comboBox_srcNode->currentText())
+            QStandardItem* childItem = project->child(i, 0);
+            if (childItem && childItem->text() == ui->comboBox_srcNode->currentText())
             {
-                node = project->child(i, 0); break;
+                node = childItem; break;
             }
         }
 
@@ -282,20 +305,22 @@ void SBAS_time_series_analysis::on_buttonbrowse_triggered()
 void SBAS_time_series_analysis::on_buttonBox_accepted()
 {
     bool bFlag = false;
-    if (copy->item(ui->comboBox_project->currentIndex(), 0)->rowCount() == 0)
+    QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox_project->currentText());
+    if (!project) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("未找到当前工程，请刷新工程列表后重试。"));
+        return;
+    }
+    if (project->rowCount() == 0)
     {
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程下未检测到数据！请先导入图像或更换工程！"));
         return;
     }
     //防重名检查
     if (ui->lineEdit_dstNode->text().isEmpty()) return;
-    QStandardItem* project = this->copy->findItems(ui->comboBox_project->currentText())[0];
-    if (!project) {
-        return;
-    }
     for (int i = 0; i < project->rowCount(); i++)
     {
-        if (ui->lineEdit_dstNode->text() == project->child(i)->text())
+        QStandardItem* childItem = project->child(i, 0);
+        if (childItem && ui->lineEdit_dstNode->text() == childItem->text())
         {
             QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点已存在，请重命名！"));
             return;
@@ -328,21 +353,35 @@ void SBAS_time_series_analysis::on_buttonBox_accepted()
     QStandardItem* image = NULL;
     for (int i = 0; i < project_item->rowCount(); i++)
     {
-        if (project_item->child(i, 0)->text() == ui->comboBox_srcNode->currentText())
+        QStandardItem* childItem = project_item->child(i, 0);
+        if (childItem && childItem->text() == ui->comboBox_srcNode->currentText())
         {
-            image = project_item->child(i, 0);
+            image = childItem;
             break;
         }
     }
-    if (!image) return;
+    if (!image) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("所选数据节点不存在，请重新选择。"));
+        return;
+    }
     QStringList filePaths;
     for (int i = 0; i < image->rowCount(); i++)
     {
-        filePaths.append(image->child(i, 1)->text());
+        QStandardItem* pathItem = image->child(i, 1);
+        if (pathItem && !pathItem->text().isEmpty())
+            filePaths.append(pathItem->text());
     }
-    if (filePaths.isEmpty()) return;
+    if (filePaths.isEmpty()) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("所选数据节点不包含有效文件路径。"));
+        return;
+    }
 
-    QString projPath = copy->item(project_item->row(), 1)->text();
+    QStandardItem* projectPathItem = copy ? copy->item(project_item->row(), 1) : nullptr;
+    if (!projectPathItem || projectPathItem->text().isEmpty()) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("工程路径无效，请重新打开工程。"));
+        return;
+    }
+    QString projPath = projectPathItem->text();
     m_activeProjectRoot = projPath.endsWith(".insar", Qt::CaseInsensitive)
         ? QFileInfo(projPath).absolutePath() : projPath;
     m_activeProjectName = ui->comboBox_project->currentText();
@@ -487,15 +526,18 @@ bool SBAS_time_series_analysis::commitOutputTransaction(QString* errorMessage)
     }
 
     if (copy) {
-        const QList<QStandardItem*> projects = copy->findItems(m_activeProjectName);
-        if (!projects.isEmpty()) {
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, m_activeProjectName);
+        if (project) {
             QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
-                projects.first(), m_activeDstNode, "SBAS-1.0", FOLDER_ICON);
+                project, m_activeDstNode, "SBAS-1.0", FOLDER_ICON);
             if (outputNode) {
                 outputNode->setToolTip(m_activeProjectName);
                 NodeUtils::findOrCreateChildItem(outputNode, "SBAS_time_series", "SBAS",
                                                   m_activeOutputPaths.first(), IMAGEDATA_ICON);
             }
+        } else {
+            InSARLogManager::LogError("SBAS_time_series_analysis",
+                QStringLiteral("处理完成后未找到工程“%1”，已跳过项目树发布。").arg(m_activeProjectName));
         }
         emit sendCopy(copy);
     }

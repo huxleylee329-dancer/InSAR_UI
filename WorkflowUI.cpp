@@ -225,13 +225,6 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         {"KML Export", "KML Export"}
     };
 
-    // Test 类叶子项顺序
-    order.leafItems["Test"] = QList<PaletteOrder::LeafItem>{
-        {"Card Source", "Card Source"},    // CardSimpleSourceNode (卡片样式)
-        {"Card Display", "Card Display"},  // CardSimpleDisplayNode (卡片样式)
-        {"Card Math (Concat)", "Card Math (Concat)"} // CardSimpleMathNode (卡片样式)
-    };
-
     // Information 类叶子项顺序（直接挂在顶级分类下）
     order.leafItems["Information"] = QList<PaletteOrder::LeafItem>{
         {"Note", "Note"},          // NoteNode - 文本注释节点

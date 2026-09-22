@@ -32,16 +32,20 @@ S1_frame_merge::S1_frame_merge(QWidget* parent) :
 }
 S1_frame_merge::~S1_frame_merge()
 {
+    StopThread();
     if (copy)
     {
         for (int i = 0; i < ui->comboBox_project->count(); i++)
         {
-            if (!copy->findItems(ui->comboBox_project->itemText(i)).isEmpty())
-                copy->findItems(ui->comboBox_project->itemText(i))[0]->setStatusTip(NOT_IN_PROCESS);
+            QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox_project->itemText(i));
+            if (project)
+                project->setStatusTip(NOT_IN_PROCESS);
         }
     }
     emit sendCopy(copy);
     S1_frame_merge_worker = nullptr;
+    delete ui;
+    ui = nullptr;
 }
 
 void S1_frame_merge::updateProcess(int value, QString information)
@@ -88,17 +92,19 @@ void S1_frame_merge::endThread()
 }
 void S1_frame_merge::StopThread()
 {
-    if (S1_frame_merge_worker != nullptr)
+    S1FrameMergeWorker* worker = S1_frame_merge_worker.data();
+    if (worker)
     {
-        if (S1_frame_merge_worker->thread()->isRunning())
+        QThread* workerThread = worker->thread();
+        worker->StopProcess();
+        if (workerThread && workerThread->isRunning())
         {
-            S1_frame_merge_worker->thread()->requestInterruption();
-            S1_frame_merge_worker->thread()->quit();
-            S1_frame_merge_worker->thread()->wait();
+            workerThread->requestInterruption();
+            workerThread->quit();
+            if (QThread::currentThread() != workerThread)
+                workerThread->wait();
         }
-        S1_frame_merge_worker = nullptr;
     }
-
 }
 void S1_frame_merge::ChangeVision(bool Editable)
 {
@@ -129,26 +135,42 @@ void S1_frame_merge::ChangeVision(bool Editable)
 void S1_frame_merge::ShowProjectList(QStandardItemModel* model)
 {
     XMLFile xmldoc;
-    QStandardItem* project = NULL;
     TiXmlElement* pnode = NULL, * pchild = NULL;
     int ret, count = 0;
     this->copy = model;
-    for (int i = 0; i < model->rowCount(); i++)
+    ui->comboBox_project->clear();
+    ui->comboBox_node1->clear();
+    ui->comboBox_node2->clear();
+    ui->comboBox_data1->clear();
+    ui->comboBox_data2->clear();
+    save_path.clear();
+    projectFile.clear();
+    if (!copy || copy->rowCount() < 1 || copy->columnCount() < 2)
     {
-        QString tmpProjectFile = copy->item(i, 1)->text() + "/" + copy->item(i, 0)->text();
+        QMessageBox::warning(this, "Warning!", QStringLiteral("工程数据不完整，请重新打开工程。"));
+        return;
+    }
+    for (int i = 0; i < copy->rowCount(); i++)
+    {
+        QStandardItem* nameItem = copy->item(i, 0);
+        QStandardItem* pathItem = copy->item(i, 1);
+        if (!nameItem || !pathItem)
+            continue;
+        QString tmpProjectFile = pathItem->text() + "/" + nameItem->text();
         ret = xmldoc.XMLFile_load(tmpProjectFile.toStdString().c_str());
-        if (ret < 0) return;
+        if (ret < 0) continue;
         ret = xmldoc.find_node("DataNode", pnode);
-        if (ret < 0) return;
+        if (ret < 0) continue;
         while (pnode)
         {
             ret = xmldoc._find_node(pnode, "Sensor", pchild);
-            if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
+            const char* sensorText = (ret == 0 && pchild) ? pchild->GetText() : nullptr;
+            if (sensorText && strcmp(sensorText, "sentinel") == 0)
             {
-                ui->comboBox_project->addItem(copy->item(i, 0)->text());
-                copy->item(i, 0)->setStatusTip(IN_PROCESS);
-                this->save_path = copy->item(i, 1)->text();
-                this->projectFile = this->save_path + "/" + copy->item(i, 0)->text();
+                ui->comboBox_project->addItem(nameItem->text());
+                nameItem->setStatusTip(IN_PROCESS);
+                this->save_path = pathItem->text();
+                this->projectFile = this->save_path + "/" + nameItem->text();
                 ui->comboBox_project->setCurrentIndex(count++);
                 break;
             }
@@ -162,8 +184,6 @@ void S1_frame_merge::ShowProjectList(QStandardItemModel* model)
         this->deleteLater();
         return;
     }
-    ui->comboBox_node1->clear();
-    ui->comboBox_node2->clear();
     //工程文件
     ret = xmldoc.XMLFile_load(this->projectFile.toStdString().c_str());
     if (ret < 0) return;
@@ -172,10 +192,12 @@ void S1_frame_merge::ShowProjectList(QStandardItemModel* model)
     while (pnode)
     {
         ret = xmldoc._find_node(pnode, "Sensor", pchild);
-        if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
+        const char* sensorText = (ret == 0 && pchild) ? pchild->GetText() : nullptr;
+        const char* nodeName = pnode->Attribute("name");
+        if (sensorText && nodeName && strcmp(sensorText, "sentinel") == 0)
         {
-            ui->comboBox_node1->addItem(pnode->Attribute("name"));
-            ui->comboBox_node2->addItem(pnode->Attribute("name"));
+            ui->comboBox_node1->addItem(nodeName);
+            ui->comboBox_node2->addItem(nodeName);
         }
         pnode = pnode->NextSiblingElement();
     }
@@ -188,14 +210,13 @@ void S1_frame_merge::ShowProjectList(QStandardItemModel* model)
     ui->comboBox_node1->setCurrentIndex(0);
     ui->comboBox_node2->setCurrentIndex(0);
     //初始化图像数据节点
-    ui->comboBox_data1->clear();
-    ui->comboBox_data2->clear();
     ret = xmldoc.find_node("DataNode", pnode);
     if (ret < 0) return;
     while (pnode)
     {
         ret = xmldoc._find_node(pnode, "Sensor", pchild);
-        if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
+        const char* sensorText = (ret == 0 && pchild) ? pchild->GetText() : nullptr;
+        if (sensorText && strcmp(sensorText, "sentinel") == 0)
         {
             break;
         }
@@ -207,7 +228,7 @@ void S1_frame_merge::ShowProjectList(QStandardItemModel* model)
     while (pchild)
     {
         if (strcmp(pchild->Value(), "Data") != 0) break;
-        ret = xmldoc._find_node(pchild, "Data_Name", pnode); if (ret < 0) return;
+        ret = xmldoc._find_node(pchild, "Data_Name", pnode); if (ret < 0 || !pnode || !pnode->GetText()) return;
         ui->comboBox_data1->addItem(pnode->GetText());
         ui->comboBox_data2->addItem(pnode->GetText());
         pchild = pchild->NextSiblingElement();
@@ -220,8 +241,18 @@ void S1_frame_merge::on_comboBox_project_currentIndexChanged()
 {
     if (ui->comboBox_project->count() != 0)
     {
-        QStandardItem* project = copy->findItems(ui->comboBox_project->currentText())[0];
-        this->save_path = copy->item(project->row(), 1)->text();
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox_project->currentText());
+        if (!project)
+        {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+            return;
+        }
+        QStandardItem* pathItem = copy->item(project->row(), 1);
+        if (!pathItem) {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("当前工程路径信息缺失，请重新打开工程。"));
+            return;
+        }
+        this->save_path = pathItem->text();
         ui->comboBox_node1->clear();
         ui->comboBox_node2->clear();
         this->projectFile = this->save_path + "/" + project->text();
@@ -234,10 +265,12 @@ void S1_frame_merge::on_comboBox_project_currentIndexChanged()
         while (pnode)
         {
             ret = xmldoc._find_node(pnode, "Sensor", pchild);
-            if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
+            const char* sensorText = (ret == 0 && pchild) ? pchild->GetText() : nullptr;
+            const char* nodeName = pnode->Attribute("name");
+            if (sensorText && nodeName && strcmp(sensorText, "sentinel") == 0)
             {
-                ui->comboBox_node1->addItem(pnode->Attribute("name"));
-                ui->comboBox_node2->addItem(pnode->Attribute("name"));
+                ui->comboBox_node1->addItem(nodeName);
+                ui->comboBox_node2->addItem(nodeName);
             }
             pnode = pnode->NextSiblingElement();
         }
@@ -258,7 +291,8 @@ void S1_frame_merge::on_comboBox_project_currentIndexChanged()
         while (pnode)
         {
             ret = xmldoc._find_node(pnode, "Sensor", pchild);
-            if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
+            const char* sensorText = (ret == 0 && pchild) ? pchild->GetText() : nullptr;
+            if (sensorText && strcmp(sensorText, "sentinel") == 0)
             {
                 break;
             }
@@ -270,7 +304,8 @@ void S1_frame_merge::on_comboBox_project_currentIndexChanged()
         while (pchild)
         {
             if (strcmp(pchild->Value(), "Data") != 0) break;
-            ret = xmldoc._find_node(pchild, "Data_Name", pnode); if (ret < 0) return;
+            ret = xmldoc._find_node(pchild, "Data_Name", pnode);
+            if (ret < 0 || !pnode || !pnode->GetText()) return;
             ui->comboBox_data1->addItem(pnode->GetText());
             ui->comboBox_data2->addItem(pnode->GetText());
             pchild = pchild->NextSiblingElement();
@@ -284,15 +319,21 @@ void S1_frame_merge::on_comboBox_node1_currentIndexChanged()
 {
     if (ui->comboBox_node1->count() != 0)
     {
-        QStandardItem* project = copy->findItems(ui->comboBox_project->currentText())[0];
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox_project->currentText());
+        if (!project)
+        {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+            return;
+        }
         QStandardItem* node = NULL;
         int num = 0;
         QModelIndex pro_index = copy->indexFromItem(project);
         for (int i = 0; i < project->rowCount(); i++)
         {
-            if (project->child(i, 0)->text() == ui->comboBox_node1->currentText())
+            QStandardItem* childItem = project->child(i, 0);
+            if (childItem && childItem->text() == ui->comboBox_node1->currentText())
             {
-                num = project->child(i, 0)->rowCount(); node = project->child(i, 0); break;
+                num = childItem->rowCount(); node = childItem; break;
             }
         }
         ui->comboBox_data1->clear();
@@ -304,7 +345,9 @@ void S1_frame_merge::on_comboBox_node1_currentIndexChanged()
         }
         for (int i = 0; i < num; i++)
         {
-            ui->comboBox_data1->addItem(node->child(i, 0)->text());
+            QStandardItem* childItem = node->child(i, 0);
+            if (childItem)
+                ui->comboBox_data1->addItem(childItem->text());
         }
         ui->comboBox_data1->setCurrentIndex(0);
     }
@@ -314,15 +357,21 @@ void S1_frame_merge::on_comboBox_node2_currentIndexChanged()
 {
     if (ui->comboBox_node2->count() != 0)
     {
-        QStandardItem* project = copy->findItems(ui->comboBox_project->currentText())[0];
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox_project->currentText());
+        if (!project)
+        {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+            return;
+        }
         QStandardItem* node = NULL;
         int num = 0;
         QModelIndex pro_index = copy->indexFromItem(project);
         for (int i = 0; i < project->rowCount(); i++)
         {
-            if (project->child(i, 0)->text() == ui->comboBox_node2->currentText())
+            QStandardItem* childItem = project->child(i, 0);
+            if (childItem && childItem->text() == ui->comboBox_node2->currentText())
             {
-                num = project->child(i, 0)->rowCount(); node = project->child(i, 0); break;
+                num = childItem->rowCount(); node = childItem; break;
             }
         }
         ui->comboBox_data2->clear();
@@ -334,7 +383,9 @@ void S1_frame_merge::on_comboBox_node2_currentIndexChanged()
         }
         for (int i = 0; i < num; i++)
         {
-            ui->comboBox_data2->addItem(node->child(i, 0)->text());
+            QStandardItem* childItem = node->child(i, 0);
+            if (childItem)
+                ui->comboBox_data2->addItem(childItem->text());
         }
         ui->comboBox_data2->setCurrentIndex(0);
     }
@@ -354,13 +405,17 @@ void S1_frame_merge::on_buttonBox_accepted()
         return;
     }
     //防重名检查
-    QStandardItem* project = this->copy->findItems(ui->comboBox_project->currentText())[0];
+    QStandardItem* project = NodeUtils::findFirstModelItem(this->copy, ui->comboBox_project->currentText());
     if (!project) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
         return;
     }
     for (int i = 0; i < project->rowCount(); i++)
     {
-        if (ui->lineEdit_dstnode->text() == project->child(i)->text() && project->child(i, 1)->text() != QString("complex-0.0"))
+        QStandardItem* nameItem = project->child(i, 0);
+        QStandardItem* rankItem = project->child(i, 1);
+        if (nameItem && rankItem && ui->lineEdit_dstnode->text() == nameItem->text() &&
+            rankItem->text() != QString("complex-0.0"))
         {
             QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点已存在，且数据等级不符合要求，请重命名！"));
             return;

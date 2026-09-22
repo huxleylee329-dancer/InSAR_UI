@@ -27,12 +27,12 @@ public slots:
     void StopThread();
     void TransitModel(QStandardItemModel*);
 private:
-    Ui::S1TopsBackGeocoding* ui;
-    QStandardItemModel* copy;
+    Ui::S1TopsBackGeocoding* ui = nullptr;
+    QStandardItemModel* copy = nullptr;
     QPointer<S1TopsBackGeocodingWorker> S1_TOPS_BackGeocoding_thread;
     QString save_path;
     QString projectFile;
-    int image_number;
+    int image_number = 0;
     void ChangeVision(bool Editable);
 signals:
     void operate(int, QString, QString, QString, QStringList, bool);

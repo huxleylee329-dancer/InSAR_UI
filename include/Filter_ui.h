@@ -3,6 +3,7 @@
 #include<qstandarditemmodel.h>
 #include "ui_Filter.h"
 #include "DenoiseWorker.h"
+#include <QPointer>
 
 class Filter_ui : public QWidget
 {
@@ -17,12 +18,12 @@ public slots:
     void endThread();
     void StopThread();
 private:
-    Ui::Filter* ui;
-    QStandardItemModel* copy;
-    DenoiseWorker* Filter_thread;
+    Ui::Filter* ui = nullptr;
+    QStandardItemModel* copy = nullptr;
+    QPointer<DenoiseWorker> Filter_thread;
     QString save_path;
-    int method;
-    int image_number;
+    int method = 0;
+    int image_number = 0;
     void ChangeVision(bool Editable);
     void persistDenoiseResult(const DenoiseFileResult& result, const QList<int>& para,
                               double alpha, const QString& projectName, const QString& savePath);

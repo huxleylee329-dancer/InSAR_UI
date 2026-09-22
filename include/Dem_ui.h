@@ -3,6 +3,7 @@
 #include<qstandarditemmodel.h>
 #include "ui_Dem.h"
 #include "DemWorker.h"
+#include <QPointer>
 
 class Dem_ui : public QWidget
 {
@@ -17,12 +18,12 @@ public slots:
     void endThread();
     void StopThread();
 private:
-    Ui::Dem* ui;
-    QStandardItemModel* copy;
-    DemWorker* Dem_thread;
+    Ui::Dem* ui = nullptr;
+    QStandardItemModel* copy = nullptr;
+    QPointer<DemWorker> Dem_thread;
     QString save_path;
-    int method;
-    int image_number;
+    int method = 0;
+    int image_number = 0;
     void ChangeVision(bool Editable);
     void persistDemResult(const DemFileResult& result, int times,
                           const QString& projectName, const QString& savePath);

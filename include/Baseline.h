@@ -5,6 +5,7 @@
 #include "ui_Baseline.h"
 #include "BaselineWorker.h"
 #include <QThread>
+#include <QPointer>
 
 class Baseline : public QWidget
 {
@@ -20,13 +21,13 @@ public slots:
     void StopThread();
     void Paint_Baseline(QList<double> temporal_baseline, QList<double> spatial_baseline, int index);
 private:
-    Ui::Baseline* ui;
-    QStandardItemModel* copy;
-    BaselineWorker* m_worker;
-    QThread* m_thread;
+    Ui::Baseline* ui = nullptr;
+    QStandardItemModel* copy = nullptr;
+    QPointer<BaselineWorker> m_worker;
+    QPointer<QThread> m_thread;
     QString save_path;
-    int method;
-    int image_number;
+    int method = 0;
+    int image_number = 0;
 signals:
     void operate(int, QString, QString, QStandardItemModel*);
     void sendCopy(QStandardItemModel*);

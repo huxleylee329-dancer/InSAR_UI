@@ -4,6 +4,7 @@
 #include "ui_S1SwathMerge.h"
 #include "S1SwathMergeWorker.h"
 #include <QThread>
+#include <QPointer>
 
 class S1_swath_merge : public QWidget
 {
@@ -21,13 +22,13 @@ public slots:
     void handleResult(const QString& dstNode, const QString& filename, const QString& mergedH5Path,
                       const QString& savePath, const QString& projectName);
 private:
-    Ui::S1SwathMerge* ui;
-    QStandardItemModel* copy;
-    S1SwathMergeWorker* S1_swath_merge_worker;
-    QThread* S1_swath_merge_thread;
+    Ui::S1SwathMerge* ui = nullptr;
+    QStandardItemModel* copy = nullptr;
+    QPointer<S1SwathMergeWorker> S1_swath_merge_worker;
+    QPointer<QThread> S1_swath_merge_thread;
     QString save_path;
     QString projectFile;
-    int image_number;
+    int image_number = 0;
     void ChangeVision(bool Editable);
 signals:
     void operate(QString projectName, QString savePath, QString dstNode,

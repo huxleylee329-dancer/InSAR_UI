@@ -195,6 +195,28 @@ SpeckleDenoise::SpeckleDenoise(QWidget* parent)
     frostDerampSpinBox->setSingleStep(0.05);
     frostDerampSpinBox->setValue(0.1);
 
+    recommendedParametersButton = new QPushButton(
+        QStringLiteral("应用 SSDD 海面实测推荐参数"), ui->filterGroup);
+    recommendedParametersButton->setToolTip(QStringLiteral(
+        "仅填写当前方法的推荐起点，不会自动开始滤波。"));
+
+    automaticParameterHintLabel = new QLabel(
+        QStringLiteral("自动估计噪声\n无需设置参数"), ui->filterGroup);
+    automaticParameterHintLabel->setWordWrap(true);
+
+    recommendationScopeLabel = new QLabel(
+        QStringLiteral(
+            "推荐值基于 SSDD 128×128 海面图 ENL 实测；"
+            "图像分辨率或场景变化时需适当调整。"),
+        ui->filterGroup);
+    recommendationScopeLabel->setWordWrap(true);
+    recommendationScopeLabel->setStyleSheet(QStringLiteral(
+        "QLabel { color: #664d03; background-color: #fff3cd; "
+        "border: 1px solid #ffecb5; border-radius: 4px; padding: 5px; }"));
+
+    connect(recommendedParametersButton, &QPushButton::clicked,
+            this, &SpeckleDenoise::applyRecommendedParameters);
+
     connect(filterMethodComboBox,
             QOverload<int>::of(&QComboBox::currentIndexChanged),
             this,
@@ -296,6 +318,14 @@ SpeckleDenoise::SpeckleDenoise(QWidget* parent)
     filterLayout->addRow(filterRadiusLabel, filterRadiusSpinBox);
     filterLayout->addRow(filterLooksLabel, filterLooksSpinBox);
     filterLayout->addRow(frostDerampLabel, frostDerampSpinBox);
+    auto* recommendationActionWidget = new QWidget(ui->filterGroup);
+    auto* recommendationActionLayout = new QHBoxLayout(recommendationActionWidget);
+    recommendationActionLayout->setContentsMargins(0, 0, 0, 0);
+    recommendationActionLayout->setSpacing(8);
+    recommendationActionLayout->addWidget(recommendedParametersButton, 1);
+    recommendationActionLayout->addWidget(automaticParameterHintLabel);
+    filterLayout->addRow(recommendationActionWidget);
+    filterLayout->addRow(recommendationScopeLabel);
     ui->widget_2->hide();
 
     const auto oldResultContainers =
@@ -801,8 +831,36 @@ void SpeckleDenoise::on_runFilterButton_clicked()
 
 void SpeckleDenoise::onFilterFinished()
 {
-    const cv::Mat filteredImage = filterWatcher->result();
     setFilterRunning(false);
+
+    cv::Mat filteredImage;
+    try
+    {
+        filteredImage = filterWatcher->result();
+    }
+    catch (const cv::Exception& error)
+    {
+        const QString message = QStringLiteral("斑点噪声抑制后台任务异常：%1")
+                                    .arg(QString::fromUtf8(error.what()));
+        InSARLogManager::LogError(QStringLiteral("SpeckleDenoise"), message);
+        QMessageBox::critical(this, QStringLiteral("错误"), message);
+        return;
+    }
+    catch (const std::exception& error)
+    {
+        const QString message = QStringLiteral("斑点噪声抑制后台任务异常：%1")
+                                    .arg(QString::fromUtf8(error.what()));
+        InSARLogManager::LogError(QStringLiteral("SpeckleDenoise"), message);
+        QMessageBox::critical(this, QStringLiteral("错误"), message);
+        return;
+    }
+    catch (...)
+    {
+        const QString message = QStringLiteral("斑点噪声抑制后台任务发生未知异常。");
+        InSARLogManager::LogError(QStringLiteral("SpeckleDenoise"), message);
+        QMessageBox::critical(this, QStringLiteral("错误"), message);
+        return;
+    }
 
     if (filteredImage.empty())
     {
@@ -897,7 +955,49 @@ void SpeckleDenoise::updateFilterParameterVisibility()
     filterLooksSpinBox->setVisible(usesLooks);
     frostDerampLabel->setVisible(usesDeramp);
     frostDerampSpinBox->setVisible(usesDeramp);
+    if (recommendedParametersButton)
+    {
+        recommendedParametersButton->setEnabled(methodIndex != 0);
+    }
+    if (automaticParameterHintLabel)
+    {
+        automaticParameterHintLabel->setVisible(methodIndex == 0);
+    }
     updateFilterDescription();
+}
+
+void SpeckleDenoise::applyRecommendedParameters()
+{
+    if (!filterMethodComboBox || !filterRadiusSpinBox ||
+        !filterLooksSpinBox || !frostDerampSpinBox)
+    {
+        return;
+    }
+
+    const int methodIndex = filterMethodComboBox->currentIndex();
+    if (methodIndex == 0)
+    {
+        return;
+    }
+
+    {
+        const QSignalBlocker radiusBlocker(filterRadiusSpinBox);
+        const QSignalBlocker looksBlocker(filterLooksSpinBox);
+        const QSignalBlocker derampBlocker(frostDerampSpinBox);
+
+        filterRadiusSpinBox->setValue(5);
+        if (methodIndex == 2)
+        {
+            frostDerampSpinBox->setValue(0.001);
+        }
+        else
+        {
+            filterLooksSpinBox->setValue(1.0);
+        }
+    }
+
+    // 只填写推荐起点，不自动执行滤波。
+    refreshCurrentResult();
 }
 
 void SpeckleDenoise::updateFilterDescription()
@@ -913,15 +1013,15 @@ void SpeckleDenoise::updateFilterDescription()
             "<b>Lee 滤波</b><br>"
             "<b>适合：</b>大面积均匀区域，如平静海面、农田和低纹理地表。<br>"
             "<b>特点：</b>利用局部均值和方差抑制乘性斑点，速度快；强边缘附近可能略有模糊。<br>"
-            "<b>推荐参数：</b>邻域半径 3（7×7 窗口）；等效视数优先填写产品标称值，未知时先用 1.0。"
-            "均匀区噪声仍强可将半径增至 4，小目标较多时可降至 2。");
+            "<b>推荐起点：</b>邻域半径 5（11×11 窗口）、等效视数 1.0。"
+            "需要保留更多小目标细节时可适当减小邻域半径。");
         break;
     case 2:
         html = QStringLiteral(
             "<b>Frost 滤波</b><br>"
             "<b>适合：</b>既有均匀区域又有明显边缘的 SAR 图像，如海岸、道路和建筑区。<br>"
             "<b>特点：</b>按距离和局部变化自适应加权，通常比简单均值更能保留边缘。<br>"
-            "<b>推荐参数：</b>邻域半径 3、衰减系数 0.10。噪声较强可将半径增至 4；"
+            "<b>推荐起点：</b>邻域半径 5、衰减系数 0.001。"
             "边缘被抹平时适当增大衰减系数，平滑不足时适当减小。");
         break;
     case 3:
@@ -929,23 +1029,23 @@ void SpeckleDenoise::updateFilterDescription()
             "<b>Gamma-MAP 滤波</b><br>"
             "<b>适合：</b>符合乘性 Gamma 噪声模型的强度图，尤其适合均匀到中等纹理区域。<br>"
             "<b>特点：</b>采用最大后验估计，在平滑和目标保持之间较稳健；模型或视数不准时效果会下降。<br>"
-            "<b>推荐参数：</b>邻域半径 3；等效视数使用产品标称值，单视数据先用 1.0。"
-            "均匀区可尝试半径 4，密集小目标区建议半径 2。");
+            "<b>推荐起点：</b>邻域半径 5、等效视数 1.0。"
+            "密集小目标区域可适当减小邻域半径。");
         break;
     case 4:
         html = QStringLiteral(
             "<b>Kuan 滤波</b><br>"
             "<b>适合：</b>需要快速处理的普通单通道 SAR 强度图，以及轻到中等斑点噪声。<br>"
             "<b>特点：</b>通过变异系数把乘性噪声近似为局部线性估计，速度快、细节保持适中。<br>"
-            "<b>推荐参数：</b>邻域半径 3；等效视数使用产品标称值，未知时先用 1.0。"
-            "弱噪声或小目标场景可将半径降至 2。");
+            "<b>推荐起点：</b>邻域半径 5、等效视数 1.0。"
+            "弱噪声或小目标场景可适当减小邻域半径。");
         break;
     default:
         html = QStringLiteral(
             "<b>BM3D</b><br>"
             "<b>适合：</b>纹理丰富、结构细节较多且斑点较强的单通道 SAR 显示图。<br>"
             "<b>特点：</b>寻找相似图块并进行协同滤波，细节保持通常较好，但计算量最大。<br>"
-            "<b>推荐参数：</b>当前实现自动估计噪声，无需设置参数；邻域半径、等效视数和 Frost 衰减均不生效。");
+            "<b>参数说明：</b>当前实现自动估计噪声，无需设置参数；邻域半径、等效视数和 Frost 衰减均不生效。");
         break;
     }
     methodDescriptionBrowser->setHtml(html);
@@ -964,6 +1064,12 @@ void SpeckleDenoise::setFilterRunning(bool running)
     filterRadiusSpinBox->setEnabled(!running);
     filterLooksSpinBox->setEnabled(!running);
     frostDerampSpinBox->setEnabled(!running);
+    if (recommendedParametersButton)
+    {
+        const bool hasManualParameters =
+            filterMethodComboBox && filterMethodComboBox->currentIndex() != 0;
+        recommendedParametersButton->setEnabled(!running && hasManualParameters);
+    }
 
     ui->FilterProgressBar->show();
     if (running)

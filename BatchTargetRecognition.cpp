@@ -34,13 +34,25 @@ BatchTargetRecognition::BatchTargetRecognition(QWidget* parent)
     previewLayout->setContentsMargins(0, 0, 0, 0);
     previewLayout->addWidget(previewLabel);
 
+    ui->modelComboBox->clear();
     ui->modelComboBox->addItem(
-        "SAR Ship Model 0429",
+        "SAR Ship Model V2 (8D, recommended)",
+        NodeUtils::getModelPath("sar_ship_model_v2.onnx")
+    );
+    ui->modelComboBox->setItemData(0, 0.658, Qt::UserRole + 1);
+    ui->modelComboBox->addItem(
+        "SAR Ship Model 0429 (legacy 5D)",
         NodeUtils::getModelPath("sar_ship_model0429.onnx")
     );
+    ui->modelComboBox->setItemData(1, 0.65, Qt::UserRole + 1);
 
-
-    ui->ConfidenceLineEdit->setText("0.65");
+    connect(ui->modelComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int index) {
+        const double recommendedThreshold =
+            ui->modelComboBox->itemData(index, Qt::UserRole + 1).toDouble();
+        ui->ConfidenceLineEdit->setText(QString::number(recommendedThreshold, 'f', 3));
+    });
+    ui->ConfidenceLineEdit->setText("0.658");
     ui->progressBar->setValue(0);
 
     ui->resultTableWidget->setColumnCount(5);
@@ -337,7 +349,7 @@ float BatchTargetRecognition::threshold() const
     float value = ui->ConfidenceLineEdit->text().trimmed().toFloat(&ok);
 
     if (!ok)
-        return 0.65f;
+        return ui->modelComboBox->currentData(Qt::UserRole + 1).toFloat();
 
     if (value < 0.0f) value = 0.0f;
     if (value > 1.0f) value = 1.0f;

@@ -18,6 +18,7 @@
 #include <QFutureWatcher>
 #include <QTextBrowser>
 #include <QTabBar>
+#include <QPushButton>
 
 
 
@@ -72,6 +73,9 @@ private:
     QLabel* filterRadiusLabel = nullptr;
     QLabel* filterLooksLabel = nullptr;
     QLabel* frostDerampLabel = nullptr;
+    QPushButton* recommendedParametersButton = nullptr;
+    QLabel* automaticParameterHintLabel = nullptr;
+    QLabel* recommendationScopeLabel = nullptr;
     QFutureWatcher<cv::Mat>* filterWatcher = nullptr;
     QTextBrowser* methodDescriptionBrowser = nullptr;
     QTabBar* imageTabBar = nullptr;
@@ -83,6 +87,7 @@ private:
     cv::Mat runBm3dDenoise(const cv::Mat& imgNorm, double sigmaFinal) const;
     double calcMedian(const cv::Mat& input) const;
     QString currentFilterSuffix() const;
+    void applyRecommendedParameters();
     void updateFilterParameterVisibility();
     void updateFilterDescription();
     void setFilterRunning(bool running);

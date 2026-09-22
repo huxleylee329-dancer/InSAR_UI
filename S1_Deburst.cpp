@@ -5,6 +5,7 @@
 #include<qscrollarea.h>
 #include<FormatConversion.h>
 #include "tinyxml.h"
+#include "NodeUtils.h"
 #include<qmessagebox.h>
 #include<QFile>
 #include<QDir>
@@ -27,17 +28,21 @@ S1_Deburst::S1_Deburst(QWidget* parent) :
 }
 S1_Deburst::~S1_Deburst()
 {
+    StopThread();
     if (copy && ui->comboBox->count() > 0)
     {
         for (int i = 0; i < ui->comboBox->count(); i++)
         {
-            if (!copy->findItems(ui->comboBox->itemText(i)).isEmpty())
-                copy->findItems(ui->comboBox->itemText(i))[0]->setStatusTip(NOT_IN_PROCESS);
+            QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->itemText(i));
+            if (project)
+                project->setStatusTip(NOT_IN_PROCESS);
         }
     }
     emit sendCopy(copy);
     S1_Deburst_worker = nullptr;
     m_thread = nullptr;
+    delete ui;
+    ui = nullptr;
 }
 
 void S1_Deburst::updateProcess(int value, QString information)
@@ -64,11 +69,16 @@ void S1_Deburst::endThread()
 }
 void S1_Deburst::StopThread()
 {
-    if (m_thread && m_thread->isRunning())
+    if (S1_Deburst_worker)
+        S1_Deburst_worker->StopProcess();
+
+    QThread* workerThread = m_thread.data();
+    if (workerThread && workerThread->isRunning())
     {
-        m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
+        workerThread->requestInterruption();
+        workerThread->quit();
+        if (QThread::currentThread() != workerThread)
+            workerThread->wait();
     }
 }
 void S1_Deburst::TransitModel(QStandardItemModel* model)
@@ -100,27 +110,39 @@ void S1_Deburst::ChangeVision(bool Editable)
 void S1_Deburst::ShowProjectList(QStandardItemModel* model)
 {
     XMLFile xmldoc;
-    QStandardItem* project = NULL;
     TiXmlElement* pnode = NULL, * pchild = NULL;
     int ret, count = 0;
     this->copy = model;
-    for (int i = 0; i < model->rowCount(); i++)
+    ui->comboBox->clear();
+    ui->comboBox_2->clear();
+    save_path.clear();
+    projectFile.clear();
+    if (!copy || copy->rowCount() < 1 || copy->columnCount() < 2)
     {
-
-        QString tmpProjectFile = copy->item(i, 1)->text() + "/" + copy->item(i, 0)->text();
+        QMessageBox::warning(this, "Warning!", QStringLiteral("工程数据不完整，请重新打开工程。"));
+        return;
+    }
+    for (int i = 0; i < copy->rowCount(); i++)
+    {
+        QStandardItem* nameItem = copy->item(i, 0);
+        QStandardItem* pathItem = copy->item(i, 1);
+        if (!nameItem || !pathItem)
+            continue;
+        QString tmpProjectFile = pathItem->text() + "/" + nameItem->text();
         ret = xmldoc.XMLFile_load(tmpProjectFile.toStdString().c_str());
-        if (ret < 0) return;
+        if (ret < 0) continue;
         ret = xmldoc.find_node("DataNode", pnode);
-        if (ret < 0) return;
+        if (ret < 0) continue;
         while (pnode)
         {
             ret = xmldoc._find_node(pnode, "Sensor", pchild);
-            if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
+            const char* sensorText = (ret == 0 && pchild) ? pchild->GetText() : nullptr;
+            if (sensorText && strcmp(sensorText, "sentinel") == 0)
             {
-                ui->comboBox->addItem(copy->item(i, 0)->text());
-                model->item(i, 0)->setStatusTip(IN_PROCESS);
-                this->save_path = copy->item(i, 1)->text();
-                this->projectFile = this->save_path + "/" + copy->item(i, 0)->text();
+                ui->comboBox->addItem(nameItem->text());
+                nameItem->setStatusTip(IN_PROCESS);
+                this->save_path = pathItem->text();
+                this->projectFile = this->save_path + "/" + nameItem->text();
                 ui->comboBox->setCurrentIndex(count++);
                 break;
             }
@@ -134,7 +156,6 @@ void S1_Deburst::ShowProjectList(QStandardItemModel* model)
         this->deleteLater();
         return;
     }
-    ui->comboBox_2->clear();
     //工程文件
     ret = xmldoc.XMLFile_load(this->projectFile.toStdString().c_str());
     if (ret < 0) return;
@@ -143,9 +164,11 @@ void S1_Deburst::ShowProjectList(QStandardItemModel* model)
     while (pnode)
     {
         ret = xmldoc._find_node(pnode, "Sensor", pchild);
-        if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
+        const char* sensorText = (ret == 0 && pchild) ? pchild->GetText() : nullptr;
+        const char* nodeName = pnode->Attribute("name");
+        if (sensorText && nodeName && strcmp(sensorText, "sentinel") == 0)
         {
-            ui->comboBox_2->addItem(pnode->Attribute("name"));
+            ui->comboBox_2->addItem(nodeName);
         }
         pnode = pnode->NextSiblingElement();
     }
@@ -164,8 +187,18 @@ void S1_Deburst::on_comboBox_currentIndexChanged()
     if (ui->comboBox->count() != 0)
     {
         
-        QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
-        this->save_path = copy->item(project->row(), 1)->text();
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->currentText());
+        if (!project)
+        {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+            return;
+        }
+        QStandardItem* pathItem = copy->item(project->row(), 1);
+        if (!pathItem) {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("当前工程路径信息缺失，请重新打开工程。"));
+            return;
+        }
+        this->save_path = pathItem->text();
         ui->comboBox_2->clear();
 
         this->projectFile = this->save_path + "/" + project->text();
@@ -178,9 +211,11 @@ void S1_Deburst::on_comboBox_currentIndexChanged()
         while (pnode)
         {
             ret = xmldoc._find_node(pnode, "Sensor", pchild);
-            if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
+            const char* sensorText = (ret == 0 && pchild) ? pchild->GetText() : nullptr;
+            const char* nodeName = pnode->Attribute("name");
+            if (sensorText && nodeName && strcmp(sensorText, "sentinel") == 0)
             {
-                ui->comboBox_2->addItem(pnode->Attribute("name"));
+                ui->comboBox_2->addItem(nodeName);
             }
             pnode = pnode->NextSiblingElement();
         }
@@ -228,8 +263,9 @@ void S1_Deburst::on_buttonBox_accepted()
     }
     QStandardItem* sourceNode = nullptr;
     for (int i = 0; i < projects.first()->rowCount(); ++i) {
-        if (projects.first()->child(i, 0)->text() == ui->comboBox_2->currentText()) {
-            sourceNode = projects.first()->child(i, 0);
+        QStandardItem* childItem = projects.first()->child(i, 0);
+        if (childItem && childItem->text() == ui->comboBox_2->currentText()) {
+            sourceNode = childItem;
             break;
         }
     }

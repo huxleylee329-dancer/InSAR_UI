@@ -32,9 +32,9 @@ private slots:
                        const QString& projectName);
 
 private:
-    Ui::GacosOnlineService* ui;
-    QStandardItemModel* copy;
-    GacosOnlineServiceWorker* m_worker;
+    Ui::GacosOnlineService* ui = nullptr;
+    QStandardItemModel* copy = nullptr;
+    GacosOnlineServiceWorker* m_worker = nullptr;
     QString save_path;
 
     void ChangeVision(bool Editable);

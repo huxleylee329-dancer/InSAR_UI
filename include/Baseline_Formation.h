@@ -3,6 +3,7 @@
 #include<qstandarditemmodel.h>
 #include"ui_BaselineFormation.h"
 #include "BaselineWorker.h"
+#include <QPointer>
 
 class Baseline_Formation : public QWidget
 {
@@ -18,15 +19,15 @@ public slots:
     void StopThread();
     void Paint_Baseline(QList<double> temporal_baseline, QList<double> spatial_baseline, int index);
 private:
-    Ui::BaselineFormation* ui;
-    QStandardItemModel* copy;
-    BaselineWorker* Baseline_Formation_thread;
+    Ui::BaselineFormation* ui = nullptr;
+    QStandardItemModel* copy = nullptr;
+    QPointer<BaselineWorker> Baseline_Formation_thread;
     QString save_path;
-    int method;
-    int image_number;
-    double temporal_thresh;
-    double temporal_thresh_low;
-    double spatial_thresh;
+    int method = 0;
+    int image_number = 0;
+    double temporal_thresh = 0.0;
+    double temporal_thresh_low = 0.0;
+    double spatial_thresh = 0.0;
 signals:
     void operate(int, const QStringList&);
     void sendCopy(QStandardItemModel*);

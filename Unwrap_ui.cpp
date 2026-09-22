@@ -11,6 +11,7 @@
 #include <QFormLayout>
 #include <Unwrap.h>
 #include "InSARLogManager.h"
+#include "NodeUtils.h"
 
 Unwrap_ui::Unwrap_ui(QWidget* parent) :
     QWidget(parent),
@@ -79,8 +80,9 @@ Unwrap_ui::~Unwrap_ui()
     {
         for (int i = 0; i < ui->comboBox->count(); i++)
         {
-            if (!copy->findItems(ui->comboBox->itemText(i)).isEmpty())
-                copy->findItems(ui->comboBox->itemText(i))[0]->setStatusTip(NOT_IN_PROCESS);
+            QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->itemText(i));
+            if (project)
+                project->setStatusTip(NOT_IN_PROCESS);
         }
     }
     emit sendCopy(copy);
@@ -272,10 +274,18 @@ void Unwrap_ui::ChangeVision(bool Editable)
 void Unwrap_ui::ShowProjectList(QStandardItemModel* model)
 {
     this->copy = model;
+    if (!copy || copy->rowCount() < 1 || copy->columnCount() < 2 ||
+        !copy->item(0, 0) || !copy->item(0, 1))
+    {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("当前没有可用工程，请先新建或打开工程。"));
+        return;
+    }
     for (int i = 0; i < model->rowCount(); i++)
     {
-        ui->comboBox->addItem(model->item(i, 0)->text());
-        model->item(i, 0)->setStatusTip(IN_PROCESS);
+        QStandardItem* projectItem = model->item(i, 0);
+        if (!projectItem) continue;
+        ui->comboBox->addItem(projectItem->text());
+        projectItem->setStatusTip(IN_PROCESS);
     }
     
     this->save_path = copy->item(0, 1)->text();
@@ -283,11 +293,12 @@ void Unwrap_ui::ShowProjectList(QStandardItemModel* model)
     int count = 0;
     for (int i = 0; i < model->rowCount(); i++)
     {
-        if (model->item(i, 0)->rowCount() != 0)
+        QStandardItem* projectItem = model->item(i, 0);
+        if (projectItem && projectItem->rowCount() != 0)
         {
-            count = model->item(i, 0)->rowCount();
-            project = model->item(i, 0);
-            ui->comboBox->setCurrentIndex(i);
+            count = projectItem->rowCount();
+            project = projectItem;
+            ui->comboBox->setCurrentIndex(ui->comboBox->findText(projectItem->text()));
             break;
         }
 
@@ -296,6 +307,7 @@ void Unwrap_ui::ShowProjectList(QStandardItemModel* model)
     {
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
         this->deleteLater();
+        return;
     }
     QModelIndex pro_index = model->indexFromItem(project);
     ui->comboBox_2->clear();
@@ -309,6 +321,7 @@ void Unwrap_ui::ShowProjectList(QStandardItemModel* model)
     {
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("未检测到可处理数据，请确保已经生成过干涉相位或已完成滤波！"));
         this->deleteLater();
+        return;
     }
     ui->comboBox_2->setCurrentIndex(0);
 }
@@ -317,8 +330,18 @@ void Unwrap_ui::on_comboBox_currentIndexChanged()
     if (ui->comboBox->count() != 0)
     {
         /*this->save_path = copy->item(ui->comboBox->currentIndex(), 1)->text();*/
-        QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
-        this->save_path = copy->item(project->row(), 1)->text();
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->currentText());
+        if (!project)
+        {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+            return;
+        }
+        QStandardItem* pathItem = copy->item(project->row(), 1);
+        if (!pathItem) {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("当前工程路径信息缺失，请重新打开工程。"));
+            return;
+        }
+        this->save_path = pathItem->text();
         QModelIndex pro_index = copy->indexFromItem(project);
         int count = project->rowCount();
         ui->comboBox_2->clear();

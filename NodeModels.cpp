@@ -1,7 +1,6 @@
 #include "NodeModels.h"
 #include "NodeDataTypes.h"
 #include "ImportDataTypes.h"
-#include "TestNodes.h"
 #include "NoteNode.h"
 #include "Sentinel1ImportNode.h"
 #include "Sentinel1BatchImportNode.h"
@@ -61,9 +60,6 @@
 
 
 #include <memory>
-
-// Uncomment this line to disable test nodes when real InSAR nodes are implemented
-#define ENABLE_TEST_NODES
 
 namespace QtNodes {
 
@@ -162,14 +158,6 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     registry->registerModel<GacosOnlineServiceNode>("DInSAR/Atmospheric Correction");
     registry->registerModel<TroposphericCorrectionNode>("DInSAR/Atmospheric Correction");
     registry->registerModel<IonosphericCorrectionNode>("DInSAR/Atmospheric Correction");
-
-    // Register test nodes for development (can be removed when all InSAR nodes are implemented)
-#ifdef ENABLE_TEST_NODES
-    // Card-based layout test nodes (new style)
-    registry->registerModel<CardSimpleSourceNode>("Test");
-    registry->registerModel<CardSimpleMathNode>("Test");
-    registry->registerModel<CardSimpleDisplayNode>("Test");
-#endif
 
     // Information Nodes
     registry->registerModel<NoteNode>("Information");

@@ -114,21 +114,26 @@ Geocoding::Geocoding(QWidget* parent) :
 }
 Geocoding::~Geocoding()
 {
+    StopThread();
     if (copy)
     {
         for (int i = 0; i < ui->comboBox_project1->count(); i++)
         {
-            if (!copy->findItems(ui->comboBox_project1->itemText(i)).isEmpty())
-                copy->findItems(ui->comboBox_project1->itemText(i))[0]->setStatusTip(NOT_IN_PROCESS);
+            QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox_project1->itemText(i));
+            if (project)
+                project->setStatusTip(NOT_IN_PROCESS);
         }
         for (int i = 0; i < ui->comboBox_project2->count(); i++)
         {
-            if (!copy->findItems(ui->comboBox_project2->itemText(i)).isEmpty())
-                copy->findItems(ui->comboBox_project2->itemText(i))[0]->setStatusTip(NOT_IN_PROCESS);
+            QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox_project2->itemText(i));
+            if (project)
+                project->setStatusTip(NOT_IN_PROCESS);
         }
     }
     emit sendCopy(copy);
     Geocoding_thread = NULL;
+    delete ui;
+    ui = nullptr;
 }
 
 void Geocoding::updateProcess(int value, QString information)
@@ -270,16 +275,19 @@ void Geocoding::endThread()
 }
 void Geocoding::StopThread()
 {
-    if (Geocoding_thread != NULL)
+    GeocodingWorker* worker = Geocoding_thread.data();
+    if (worker)
     {
-        if (Geocoding_thread->thread()->isRunning())
+        QThread* workerThread = worker->thread();
+        worker->StopProcess();
+        if (workerThread && workerThread->isRunning())
         {
-            Geocoding_thread->thread()->requestInterruption();
-            Geocoding_thread->thread()->quit();
-            Geocoding_thread->thread()->wait();
+            workerThread->requestInterruption();
+            workerThread->quit();
+            if (QThread::currentThread() != workerThread)
+                workerThread->wait();
         }
     }
-
 }
 void Geocoding::TransitModel(QStandardItemModel* model)
 {
@@ -334,23 +342,32 @@ void Geocoding::ChangeVision(bool Editable)
 void Geocoding::ShowProjectList(QStandardItemModel* model)
 {
     this->copy = model;
+    if (!copy || copy->rowCount() < 1 || copy->columnCount() < 2 ||
+        !copy->item(0, 0) || !copy->item(0, 1))
+    {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("当前没有可用工程，请先新建或打开工程。"));
+        return;
+    }
     for (int i = 0; i < model->rowCount(); i++)
     {
-        ui->comboBox_project1->addItem(model->item(i, 0)->text());
-        ui->comboBox_project2->addItem(model->item(i, 0)->text());
-        model->item(i, 0)->setStatusTip(IN_PROCESS);
+        QStandardItem* projectItem = model->item(i, 0);
+        if (!projectItem) continue;
+        ui->comboBox_project1->addItem(projectItem->text());
+        ui->comboBox_project2->addItem(projectItem->text());
+        projectItem->setStatusTip(IN_PROCESS);
     }
     this->save_path = copy->item(0, 1)->text();
     QStandardItem* project = NULL;
     int count = 0;
     for (int i = 0; i < model->rowCount(); i++)
     {
-        if (model->item(i, 0)->rowCount() != 0)
+        QStandardItem* projectItem = model->item(i, 0);
+        if (projectItem && projectItem->rowCount() != 0)
         {
-            count = model->item(i, 0)->rowCount();
-            project = model->item(i, 0);
-            ui->comboBox_project1->setCurrentIndex(i);
-            ui->comboBox_project2->setCurrentIndex(i);
+            count = projectItem->rowCount();
+            project = projectItem;
+            ui->comboBox_project1->setCurrentIndex(ui->comboBox_project1->findText(projectItem->text()));
+            ui->comboBox_project2->setCurrentIndex(ui->comboBox_project2->findText(projectItem->text()));
             break;
         }
 
@@ -375,8 +392,11 @@ void Geocoding::ShowProjectList(QStandardItemModel* model)
             ui->comboBox_node2->addItem(model->data(model->index(i, 0, pro_index)).toString());
             if (!isnodefound)
             {
-                node = project->child(i, 0);
-                isnodefound = true;
+                QStandardItem* nameItem = project->child(i, 0);
+                if (nameItem) {
+                    node = nameItem;
+                    isnodefound = true;
+                }
             }
         }
     }
@@ -393,8 +413,11 @@ void Geocoding::ShowProjectList(QStandardItemModel* model)
             ui->comboBox_node1->addItem(model->data(model->index(i, 0, pro_index)).toString());
             if (!isnodefound)
             {
-                node = project->child(i, 0);
-                isnodefound = true;
+                QStandardItem* nameItem = project->child(i, 0);
+                if (nameItem) {
+                    node = nameItem;
+                    isnodefound = true;
+                }
             }
         }
     }
@@ -412,9 +435,18 @@ void Geocoding::on_comboBox_project1_currentIndexChanged()
 {
     if (ui->comboBox_project1->count() != 0)
     {
-        QStandardItem* project = copy->findItems(ui->comboBox_project1->currentText())[0];
-        if (!project) return;
-        this->save_path = copy->item(project->row(), 1)->text();
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox_project1->currentText());
+        if (!project)
+        {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+            return;
+        }
+        QStandardItem* pathItem = copy->item(project->row(), 1);
+        if (!pathItem) {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("当前工程路径信息缺失，请重新打开工程。"));
+            return;
+        }
+        this->save_path = pathItem->text();
         QModelIndex pro_index = copy->indexFromItem(project);
         int count = project->rowCount();
         if (count < 1)
@@ -453,9 +485,18 @@ void Geocoding::on_comboBox_project2_currentIndexChanged()
 {
     if (ui->comboBox_project2->count() != 0)
     {
-        QStandardItem* project = copy->findItems(ui->comboBox_project2->currentText())[0];
-        if (!project) return;
-        this->save_path = copy->item(project->row(), 1)->text();
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox_project2->currentText());
+        if (!project)
+        {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+            return;
+        }
+        QStandardItem* pathItem = copy->item(project->row(), 1);
+        if (!pathItem) {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("当前工程路径信息缺失，请重新打开工程。"));
+            return;
+        }
+        this->save_path = pathItem->text();
         QModelIndex pro_index = copy->indexFromItem(project);
         int count = project->rowCount();
         if (count < 1)
@@ -501,8 +542,9 @@ void Geocoding::on_buttonBox_accepted()
         return;
     }
     //防重名检查
-    QStandardItem* project = this->copy->findItems(ui->comboBox_project1->currentText())[0];
+    QStandardItem* project = NodeUtils::findFirstModelItem(this->copy, ui->comboBox_project1->currentText());
     if (!project) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
         return;
     }
     for (int i = 0; i < project->rowCount(); i++)
@@ -596,8 +638,9 @@ void Geocoding::on_buttonBox_2_accepted()
         return;
     }
     //防重名检查
-    QStandardItem* project = this->copy->findItems(ui->comboBox_project2->currentText())[0];
+    QStandardItem* project = NodeUtils::findFirstModelItem(this->copy, ui->comboBox_project2->currentText());
     if (!project) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
         return;
     }
     for (int i = 0; i < project->rowCount(); i++)

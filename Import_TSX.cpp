@@ -37,13 +37,19 @@ Import_TSX::~Import_TSX()
     {
         for (int i = 0; i < ui->comboBox_dst_project->count(); i++)
         {
-            if (!copy->findItems(ui->comboBox_dst_project->itemText(i)).isEmpty())
-                copy->findItems(ui->comboBox_dst_project->itemText(i))[0]->setStatusTip(NOT_IN_PROCESS);
+            if (QStandardItem* project = NodeUtils::findFirstModelItem(
+                    copy, ui->comboBox_dst_project->itemText(i)))
+            {
+                project->setStatusTip(NOT_IN_PROCESS);
+            }
         }
         for (int i = 0; i < ui->comboBox_dst_project_2->count(); i++)
         {
-            if (!copy->findItems(ui->comboBox_dst_project_2->itemText(i)).isEmpty())
-                copy->findItems(ui->comboBox_dst_project_2->itemText(i))[0]->setStatusTip(NOT_IN_PROCESS);
+            if (QStandardItem* project = NodeUtils::findFirstModelItem(
+                    copy, ui->comboBox_dst_project_2->itemText(i)))
+            {
+                project->setStatusTip(NOT_IN_PROCESS);
+            }
         }
     }
 }
@@ -179,7 +185,9 @@ void Import_TSX::TransitModel(QStandardItemModel* model)
 
 void Import_TSX::on_comboBox_dst_project_currentIndexChanged()
 {
-    QStandardItem* project = this->copy->findItems(ui->comboBox_dst_project->currentText())[0];
+    QStandardItem* project = NodeUtils::findFirstModelItem(
+        this->copy, ui->comboBox_dst_project->currentText());
+    if (!project) return;
     QModelIndex pro_index = this->copy->indexFromItem(project);
     QModelIndex pro_path_index = pro_index.siblingAtColumn(1);
     this->save_path = this->copy->itemFromIndex(pro_path_index)->text();
@@ -187,20 +195,35 @@ void Import_TSX::on_comboBox_dst_project_currentIndexChanged()
 void Import_TSX::ShowProjectList(QStandardItemModel* model)
 {
     this->copy = model;
+    ui->comboBox_dst_project->clear();
+    ui->comboBox_dst_project_2->clear();
+    this->save_path.clear();
+    if (!model || model->rowCount() < 1 || model->columnCount() < 2) return;
+
+    QStandardItem* firstProject = model->item(0, 0);
+    QStandardItem* firstPath = model->item(0, 1);
+    if (!firstProject || !firstPath) return;
+
     for (int i = 0; i < model->rowCount(); i++)
     {
-        ui->comboBox_dst_project->addItem(model->item(i,0)->text());
-        ui->comboBox_dst_project_2->addItem(model->item(i, 0)->text());
-        model->item(i, 0)->setStatusTip(IN_PROCESS);
+        QStandardItem* project = model->item(i, 0);
+        QStandardItem* path = model->item(i, 1);
+        if (!project || !path) continue;
+        ui->comboBox_dst_project->addItem(project->text());
+        ui->comboBox_dst_project_2->addItem(project->text());
+        project->setStatusTip(IN_PROCESS);
     }
+    if (ui->comboBox_dst_project->count() == 0) return;
     ui->comboBox_dst_project->setCurrentIndex(0);
     ui->comboBox_dst_project_2->setCurrentIndex(0);
-    this->save_path=model->item(0,1)->text();
+    this->save_path = firstPath->text();
 }
 
 void Import_TSX::on_comboBox_dst_project_2_currentIndexChanged()
 {
-    QStandardItem* project = this->copy->findItems(ui->comboBox_dst_project_2->currentText())[0];
+    QStandardItem* project = NodeUtils::findFirstModelItem(
+        this->copy, ui->comboBox_dst_project_2->currentText());
+    if (!project) return;
     QModelIndex pro_index = this->copy->indexFromItem(project);
     QModelIndex pro_path_index = pro_index.siblingAtColumn(1);
     this->save_path = this->copy->itemFromIndex(pro_path_index)->text();
@@ -301,8 +324,11 @@ void Import_TSX::on_buttonBox_accepted()
 
     //防重名检查
 
-    QStandardItem* project = this->copy->findItems(ui->comboBox_dst_project->currentText())[0];
+    QStandardItem* project = NodeUtils::findFirstModelItem(
+        this->copy, ui->comboBox_dst_project->currentText());
     if (!project) {
+        QMessageBox::warning(this, QStringLiteral("目标工程不可用"),
+            QStringLiteral("所选目标工程不存在或已被关闭，请重新选择工程。"));
         return;
     }
     bool same_name_node = false;
@@ -378,8 +404,11 @@ void Import_TSX::on_buttonBox_2_accepted()
     
 
     //防重名检查
-    QStandardItem* project = this->copy->findItems(ui->comboBox_dst_project_2->currentText())[0];
+    QStandardItem* project = NodeUtils::findFirstModelItem(
+        this->copy, ui->comboBox_dst_project_2->currentText());
     if (!project) {
+        QMessageBox::warning(this, QStringLiteral("目标工程不可用"),
+            QStringLiteral("所选目标工程不存在或已被关闭，请重新选择工程。"));
         return;
     }
     bool same_name_node = false;

@@ -31,21 +31,26 @@ Cut::Cut(QWidget* parent) :
 }
 Cut::~Cut()
 {
-    Cut_thread = NULL;
+    StopThread();
     /*改变工程文件的处理状态为NOT_IN_PROCESS*/
     if (copy)
     {
         for (int i = 0; i < ui->comboBox->count(); i++)
         {
-            if (!copy->findItems(ui->comboBox->itemText(i)).isEmpty())
-                copy->findItems(ui->comboBox->itemText(i))[0]->setStatusTip(NOT_IN_PROCESS);
+            QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->itemText(i));
+            if (project)
+                project->setStatusTip(NOT_IN_PROCESS);
         }
         for (int i = 0; i < ui->comboBox_3->count(); i++)
         {
-            if (!copy->findItems(ui->comboBox_3->itemText(i)).isEmpty())
-                copy->findItems(ui->comboBox_3->itemText(i))[0]->setStatusTip(NOT_IN_PROCESS);
+            QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox_3->itemText(i));
+            if (project)
+                project->setStatusTip(NOT_IN_PROCESS);
         }
     }
+    Cut_thread = nullptr;
+    delete ui;
+    ui = nullptr;
 }
 void Cut::updateProcess(int value, QString information)
 {
@@ -87,13 +92,17 @@ void Cut::endThread()
 }
 void Cut::StopThread()
 {
-    if (Cut_thread != NULL)
+    CutWorker* worker = Cut_thread.data();
+    if (worker)
     {
-        if (Cut_thread->thread()->isRunning())
+        QThread* workerThread = worker->thread();
+        worker->StopProcess();
+        if (workerThread && workerThread->isRunning())
         {
-            Cut_thread->thread()->requestInterruption();
-            Cut_thread->thread()->quit();
-            Cut_thread->thread()->wait();
+            workerThread->requestInterruption();
+            workerThread->quit();
+            if (QThread::currentThread() != workerThread)
+                workerThread->wait();
         }
     }
     isCutting = false;
@@ -125,20 +134,20 @@ void Cut::ReceivePos(double left, double right, double top, double bottom)
     QString src_node = ui->comboBox_4->currentText();
     QString dst_node = ui->lineEdit_2->text();
 
-    QList<QStandardItem*> foundProjects = copy->findItems(project_name);
-    if (foundProjects.isEmpty())
+    QStandardItem* project = NodeUtils::findFirstModelItem(copy, project_name);
+    if (!project)
     {
         QMessageBox::warning(this, QStringLiteral("警告"), QStringLiteral("未在项目中查找到该工程！"));
         return;
     }
-    QStandardItem* project = foundProjects[0];
     QStandardItem* node = nullptr;
     int src_node_index = -1;
     for (int i = 0; i < project->rowCount(); i++)
     {
-        if (project->child(i, 0)->text() == src_node)
+        QStandardItem* childItem = project->child(i, 0);
+        if (childItem && childItem->text() == src_node)
         {
-            node = project->child(i, 0);
+            node = childItem;
             src_node_index = i;
             break;
         }
@@ -153,7 +162,9 @@ void Cut::ReceivePos(double left, double right, double top, double bottom)
     QStringList inputPaths;
     for (int i = 0; i < node->rowCount(); i++)
     {
-        inputPaths.append(node->child(i, 1)->text());
+        QStandardItem* pathItem = node->child(i, 1);
+        if (pathItem && !pathItem->text().isEmpty())
+            inputPaths.append(pathItem->text());
     }
 
     if (inputPaths.isEmpty())
@@ -184,7 +195,8 @@ void Cut::ReceivePos(double left, double right, double top, double bottom)
     Cut_thread = new CutWorker;
     Cut_thread->moveToThread(new QThread(this));
 
-    QString src_data_rank = (project->child(src_node_index, 1)) ? project->child(src_node_index, 1)->text() : QString("complex-1.0");
+    QStandardItem* sourceRankItem = project->child(src_node_index, 1);
+    QString src_data_rank = sourceRankItem ? sourceRankItem->text() : QString("complex-1.0");
     QStandardItem* Images_Cut = NodeUtils::findOrCreateProjectNode(project, dst_node, src_data_rank);
     if (Images_Cut)
     {
@@ -220,9 +232,10 @@ void Cut::ReceivePos(double left, double right, double top, double bottom)
         QStandardItem* item_img = nullptr;
         for (int j = 0; j < Images_Cut->rowCount(); j++)
         {
-            if (Images_Cut->child(j, 0)->text() == cutName)
+            QStandardItem* childItem = Images_Cut->child(j, 0);
+            if (childItem && childItem->text() == cutName)
             {
-                item_img = Images_Cut->child(j, 0);
+                item_img = childItem;
                 break;
             }
         }
@@ -261,11 +274,22 @@ void Cut::ReceivePos(double left, double right, double top, double bottom)
     Cut_thread->thread()->start();
     ChangeVision(false);
     
-    QMetaObject::invokeMethod(Cut_thread, [=]() {
-        Cut_thread->Cut2(h5_left, h5_right, h5_top, h5_bottom,
-                         this->save_path,
-                         project_name.endsWith(".insar", Qt::CaseInsensitive) ? project_name : project_name + ".insar",
-                         src_node, dst_node, inputPaths, src_data_rank, master_index);
+    const QPointer<CutWorker> worker = Cut_thread;
+    const double taskLeft = h5_left;
+    const double taskRight = h5_right;
+    const double taskTop = h5_top;
+    const double taskBottom = h5_bottom;
+    const QString taskSavePath = save_path;
+    const QString taskProjectName = project_name.endsWith(".insar", Qt::CaseInsensitive)
+        ? project_name : project_name + ".insar";
+    QMetaObject::invokeMethod(worker.data(), [worker, taskLeft, taskRight, taskTop, taskBottom,
+                                              taskSavePath, taskProjectName, src_node, dst_node,
+                                              inputPaths, src_data_rank, master_index]() {
+        if (!worker)
+            return;
+        worker->Cut2(taskLeft, taskRight, taskTop, taskBottom,
+                     taskSavePath, taskProjectName, src_node, dst_node,
+                     inputPaths, src_data_rank, master_index);
     }, Qt::QueuedConnection);
 }
 
@@ -281,23 +305,32 @@ void Cut::cancelled()
 void Cut::ShowProjectList(QStandardItemModel *model)
 {
     this->copy = model;
+    if (!copy || copy->rowCount() < 1 || copy->columnCount() < 2 ||
+        !copy->item(0, 0) || !copy->item(0, 1))
+    {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("当前没有可用工程，请先新建或打开工程。"));
+        return;
+    }
     for (int i = 0; i < model->rowCount(); i++)
     {
-        ui->comboBox->addItem(model->item(i,0)->text());
-        ui->comboBox_3->addItem(model->item(i, 0)->text());
-        model->item(i, 0)->setStatusTip(IN_PROCESS);
+        QStandardItem* projectItem = model->item(i, 0);
+        if (!projectItem) continue;
+        ui->comboBox->addItem(projectItem->text());
+        ui->comboBox_3->addItem(projectItem->text());
+        projectItem->setStatusTip(IN_PROCESS);
     }
     this->save_path = copy->item(0, 1)->text();
     QStandardItem* project = NULL;
     int count = 0;
     for (int i = 0; i < model->rowCount(); i++)
     {
-        if (model->item(i, 0)->rowCount() != 0)
+        QStandardItem* projectItem = model->item(i, 0);
+        if (projectItem && projectItem->rowCount() != 0)
         {
-            count = model->item(i, 0)->rowCount();
-            project = model->item(i, 0);
-            ui->comboBox->setCurrentIndex(i);
-            ui->comboBox_3->setCurrentIndex(i);
+            count = projectItem->rowCount();
+            project = projectItem;
+            ui->comboBox->setCurrentIndex(ui->comboBox->findText(projectItem->text()));
+            ui->comboBox_3->setCurrentIndex(ui->comboBox_3->findText(projectItem->text()));
             break;
         }
 
@@ -306,6 +339,7 @@ void Cut::ShowProjectList(QStandardItemModel *model)
     {
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
         this->deleteLater();
+        return;
     }
     QModelIndex pro_index = model->indexFromItem(project);
     ui->comboBox_2->clear();
@@ -326,6 +360,7 @@ void Cut::ShowProjectList(QStandardItemModel *model)
     {
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("未检测到可处理数据，请先导入图像数据！"));
         this->deleteLater();
+        return;
     }
     ui->comboBox_2->setCurrentIndex(0);
 
@@ -335,8 +370,18 @@ void Cut::on_comboBox_currentIndexChanged()
     if (ui->comboBox->count() != 0)
     {
         //this->save_path = copy->item(ui->comboBox->currentIndex(), 1)->text();
-        QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
-        this->save_path = copy->item(project->row(), 1)->text();
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->currentText());
+        if (!project)
+        {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+            return;
+        }
+        QStandardItem* pathItem = copy->item(project->row(), 1);
+        if (!pathItem) {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("当前工程路径信息缺失，请重新打开工程。"));
+            return;
+        }
+        this->save_path = pathItem->text();
         QModelIndex pro_index = copy->indexFromItem(project);
         int count = project->rowCount();
         ui->comboBox_2->clear();
@@ -388,12 +433,18 @@ void Cut::on_comboBox_2_currentIndexChanged()
 {
     if (ui->comboBox_2->count() != 0)
     {
-        QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox->currentText());
+        if (!project)
+        {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+            return;
+        }
         QModelIndex pro_index = copy->indexFromItem(project);
         for (int i = 0; i < project->rowCount(); i++)
         {
-            if (project->child(i,0)->text() == ui->comboBox_2->currentText())
-                image_number = project->child(i, 0)->rowCount();
+            QStandardItem* childItem = project->child(i, 0);
+            if (childItem && childItem->text() == ui->comboBox_2->currentText())
+                image_number = childItem->rowCount();
         }
     }
     
@@ -404,8 +455,18 @@ void Cut::on_comboBox_3_currentIndexChanged()
     if (ui->comboBox_3->count() != 0)
     {
         //this->save_path = copy->item(ui->comboBox->currentIndex(), 1)->text();
-        QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
-        this->save_path = copy->item(project->row(), 1)->text();
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox_3->currentText());
+        if (!project)
+        {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+            return;
+        }
+        QStandardItem* pathItem = copy->item(project->row(), 1);
+        if (!pathItem) {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("当前工程路径信息缺失，请重新打开工程。"));
+            return;
+        }
+        this->save_path = pathItem->text();
         QModelIndex pro_index = copy->indexFromItem(project);
         int count = project->rowCount();
         ui->comboBox_4->clear();
@@ -425,12 +486,18 @@ void Cut::on_comboBox_4_currentIndexChanged()
 {
     if (ui->comboBox_4->count() != 0)
     {
-        QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
+        QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox_3->currentText());
+        if (!project)
+        {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+            return;
+        }
         QModelIndex pro_index = copy->indexFromItem(project);
         for (int i = 0; i < project->rowCount(); i++)
         {
-            if (project->child(i, 0)->text() == ui->comboBox_4->currentText())
-                image_number = project->child(i, 0)->rowCount();
+            QStandardItem* childItem = project->child(i, 0);
+            if (childItem && childItem->text() == ui->comboBox_4->currentText())
+                image_number = childItem->rowCount();
         }
     }
 
@@ -478,20 +545,20 @@ void Cut::on_buttonBox_accepted()
     QString src_node = ui->comboBox_2->currentText();
     QString dst_node = ui->lineEdit->text();
 
-    QList<QStandardItem*> foundProjects = copy->findItems(project_name);
-    if (foundProjects.isEmpty())
+    QStandardItem* project = NodeUtils::findFirstModelItem(copy, project_name);
+    if (!project)
     {
         QMessageBox::warning(this, QStringLiteral("警告"), QStringLiteral("未在项目中查找到该工程！"));
         return;
     }
-    QStandardItem* project = foundProjects[0];
     QStandardItem* node = nullptr;
     int src_node_index = -1;
     for (int i = 0; i < project->rowCount(); i++)
     {
-        if (project->child(i, 0)->text() == src_node)
+        QStandardItem* childItem = project->child(i, 0);
+        if (childItem && childItem->text() == src_node)
         {
-            node = project->child(i, 0);
+            node = childItem;
             src_node_index = i;
             break;
         }
@@ -506,7 +573,9 @@ void Cut::on_buttonBox_accepted()
     QStringList inputPaths;
     for (int i = 0; i < node->rowCount(); i++)
     {
-        inputPaths.append(node->child(i, 1)->text());
+        QStandardItem* pathItem = node->child(i, 1);
+        if (pathItem && !pathItem->text().isEmpty())
+            inputPaths.append(pathItem->text());
     }
 
     if (inputPaths.isEmpty())
@@ -552,9 +621,10 @@ void Cut::on_buttonBox_accepted()
         QStandardItem* item_img = nullptr;
         for (int j = 0; j < Images_Cut->rowCount(); j++)
         {
-            if (Images_Cut->child(j, 0)->text() == cutName)
+            QStandardItem* childItem = Images_Cut->child(j, 0);
+            if (childItem && childItem->text() == cutName)
             {
-                item_img = Images_Cut->child(j, 0);
+                item_img = childItem;
                 break;
             }
         }
@@ -594,10 +664,16 @@ void Cut::on_buttonBox_accepted()
     Cut_thread->thread()->start();
     ChangeVision(false);
     
-    QMetaObject::invokeMethod(Cut_thread, [=]() {
-        Cut_thread->Cut(para, this->save_path,
-                        project_name.endsWith(".insar", Qt::CaseInsensitive) ? project_name : project_name + ".insar",
-                        src_node, dst_node, inputPaths, QString("complex-1.0"));
+    const QPointer<CutWorker> worker = Cut_thread;
+    const QString taskSavePath = save_path;
+    const QString taskProjectName = project_name.endsWith(".insar", Qt::CaseInsensitive)
+        ? project_name : project_name + ".insar";
+    QMetaObject::invokeMethod(worker.data(), [worker, para, taskSavePath, taskProjectName,
+                                              src_node, dst_node, inputPaths]() {
+        if (!worker)
+            return;
+        worker->Cut(para, taskSavePath, taskProjectName,
+                    src_node, dst_node, inputPaths, QString("complex-1.0"));
     }, Qt::QueuedConnection);
 
     
@@ -615,21 +691,40 @@ void Cut::on_Preview_pressed()
     ui->Preview->setDisabled(true);
     ui->Preview->setText(QStringLiteral("正在加载预览图..."));
     ui->Preview->repaint();
-    QStandardItem* project = copy->findItems(ui->comboBox_3->currentText())[0];
+    QStandardItem* project = NodeUtils::findFirstModelItem(copy, ui->comboBox_3->currentText());
+    if (!project)
+    {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("所选工程不存在或已被关闭，请刷新工程列表后重试。"));
+        isPreviewPressed = false;
+        ui->Preview->setDisabled(false);
+        ui->Preview->setText(QStringLiteral("预览"));
+        return;
+    }
     QString image_name;
     QString image_path;
     QString jpg_path;
     QFileInfo fileinfo;
     for (int i = 0; i < project->rowCount(); i++)
     {
-        if (project->child(i, 0)->text() == ui->comboBox_4->currentText())
+        QStandardItem* nodeItem = project->child(i, 0);
+        if (nodeItem && nodeItem->text() == ui->comboBox_4->currentText())
         {
-            image_name = project->child(i, 0)->child(0, 0)->text();
-            image_path = project->child(i, 0)->child(0, 1)->text();
+            QStandardItem* nameItem = nodeItem->child(0, 0);
+            QStandardItem* pathItem = nodeItem->child(0, 1);
+            if (!nameItem || !pathItem)
+                break;
+            image_name = nameItem->text();
+            image_path = pathItem->text();
             fileinfo = QFileInfo(image_path);
             jpg_path = QString("%1%2%3%4").arg(fileinfo.absolutePath()).arg("/").arg(image_name).arg(".jpg");
             break;
         }
+    }
+    if (image_name.isEmpty() || image_path.isEmpty())
+    {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("所选节点的图像数据不完整，无法预览。"));
+        cancelled();
+        return;
     }
     if (QFile::exists(jpg_path))
     {
